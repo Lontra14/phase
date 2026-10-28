@@ -28,6 +28,7 @@ const GamePage = lazy(() =>
 const GameSetupPage = lazy(() =>
   import("./pages/GameSetupPage").then((m) => ({ default: m.GameSetupPage })),
 );
+const MatchLabPage = lazy(() => import("./pages/MatchLabPage").then((m) => ({ default: m.MatchLabPage })));
 const MultiplayerPage = lazy(() => import("./pages/MultiplayerPage").then((m) => ({ default: m.MultiplayerPage })));
 const DeckBuilderPage = lazy(() => import("./pages/DeckBuilderPage").then((m) => ({ default: m.DeckBuilderPage })));
 const MyDecksPage = lazy(() => import("./pages/MyDecksPage").then((m) => ({ default: m.MyDecksPage })));
@@ -136,6 +137,7 @@ function AppContent() {
           <Route element={<AppShell />}>
             <Route path="/" element={<DevStrict><MenuPage /></DevStrict>} />
             <Route path="/setup" element={<DevStrict><GameSetupPage /></DevStrict>} />
+            <Route path="/lab" element={<DevStrict><MatchLabPage /></DevStrict>} />
             <Route path="/multiplayer" element={<DevStrict><MultiplayerPage /></DevStrict>} />
             <Route path="/my-decks" element={<DevStrict><MyDecksPage /></DevStrict>} />
             <Route path="/deck-builder" element={<DevStrict><DeckBuilderPage /></DevStrict>} />
