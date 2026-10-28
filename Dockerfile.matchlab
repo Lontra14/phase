@@ -1,0 +1,24 @@
+# Rogue Forge MatchLab — build the static site on your own PC with Docker only
+# (no Rust/Node installs). From the repository root:
+#
+#   docker build -f Dockerfile.matchlab --output type=local,dest=matchlab-site .
+#
+# The `matchlab-site` folder that appears is what you upload to your domain.
+# First build takes a while (Rust toolchain, card data downloads).
+
+FROM rust:1-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends curl jq binaryen ca-certificates gnupg \
+ && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && npm install -g pnpm@9 \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY rust-toolchain.toml ./
+# Installs the pinned nightly + wasm32 target from rust-toolchain.toml.
+RUN rustup toolchain install
+RUN cargo install wasm-bindgen-cli --version 0.2.121 --locked
+COPY . .
+RUN chmod +x scripts/*.sh && bash ./scripts/build-matchlab-site.sh /site
+
+FROM scratch AS site
+COPY --from=build /site /
