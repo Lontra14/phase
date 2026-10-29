@@ -12,11 +12,11 @@
 // their own deck and joins with that code.
 //
 // Deep link (used by the Rogue Forge roguelike to hand a battle over):
-//   /lab#you=<b64url decklist>&opp=<b64url decklist>&life=20&ai=Medium&format=Freeform&first=play&auto=1
+//   /#you=<b64url decklist>&opp=<b64url decklist>&life=20&ai=Medium&format=Freeform&first=play&auto=1
 // Any key may be omitted; `auto=1` starts the match as soon as the card DB is ready.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import type { FormatConfig, GameFormat } from "../adapter/types";
 import { getSharedAdapter } from "../adapter/wasm-adapter";
@@ -175,6 +175,7 @@ async function checkSide(text: string): Promise<SideCheck> {
 
 export function MatchLabPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const cardStatus = useCardDataStore((s) => s.status);
   // Read the deep link once; it wins over the saved draft.
   const [fromHash] = useState(readHash);
@@ -195,7 +196,13 @@ export function MatchLabPage() {
   const [checks, setChecks] = useState<{ you: SideCheck | null; opp: SideCheck | null }>({ you: null, opp: null });
   const [busy, setBusy] = useState(false);
   const [joinCode, setJoinCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // The match screen sends players back here (as /setup or /multiplayer) with the reason.
+  const [error, setError] = useState<string | null>(() => {
+    const st = location.state as { setupError?: string; deckRejected?: boolean; reason?: string } | null;
+    if (st?.setupError) return st.setupError;
+    if (st?.deckRejected) return `Your deck was rejected by the host${st.reason ? `: ${st.reason}` : "."}`;
+    return null;
+  });
   const autoStarted = useRef(false);
 
   useEffect(() => {
@@ -344,7 +351,11 @@ export function MatchLabPage() {
         }
         const formatConfig: FormatConfig = draft.life ? { ...base, starting_life: draft.life } : base;
         // GameProvider opens the room, shows the code and waits for the guest.
-        navigate(`/game/${gameId}?mode=p2p-host&format=${draft.format}&players=2&match=bo1`, { state: { formatConfig } });
+        // useBroker:false = pure PeerJS room shared by code: never listed on (or
+        // routed through) the phase.rs lobby servers, whatever the cached server mode.
+        navigate(`/game/${gameId}?mode=p2p-host&format=${draft.format}&players=2&match=bo1`, {
+          state: { formatConfig, useBroker: false },
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -425,7 +436,7 @@ export function MatchLabPage() {
   return (
     <div className="menu-scene relative flex min-h-screen flex-col overflow-hidden">
       <MenuParticles />
-      <ScreenChrome onBack={() => navigate("/")} />
+      <ScreenChrome />
       <div className="menu-scene__vignette" />
       <div className="menu-scene__haze" />
 
