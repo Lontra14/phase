@@ -9,7 +9,10 @@
 //
 // "Vs a friend" reuses phase.rs's own peer-to-peer play (PeerJS, no server):
 // the host gets a 5-character room code, the friend opens MatchLab, pastes
-// their own deck and joins with that code.
+// their own deck and joins with that code. Hosting goes through the same
+// pre-game lobby as phase.rs's Multiplayer page (startP2PHostingSession, no
+// lobby broker): the room waits here, starts by itself once the friend is
+// seated, and the global useHostingSession hook then opens the match.
 //
 // Deep link (used by the Rogue Forge roguelike to hand a battle over):
 //   /#you=<b64url decklist>&opp=<b64url decklist>&life=20&ai=Medium&format=Freeform&first=play&auto=1
@@ -29,13 +32,13 @@ import { AI_DIFFICULTIES, type SelectableAiDifficulty } from "../constants/ai";
 import { ACTIVE_DECK_KEY, stampDeckMeta, writeSavedDeckData } from "../constants/storage";
 import { canonicalizeDeckNames, deckCardNames } from "../services/canonicalCardNames";
 import { savedDeckCatalogId } from "../services/deckCatalog";
-import { detectAndParseDeck, parsedDeckHasCards, totalCards, type ParsedDeck } from "../services/deckParser";
+import { detectAndParseDeck, expandParsedDeck, parsedDeckHasCards, totalCards, type ParsedDeck } from "../services/deckParser";
 import { canAttemptNativeEngine } from "../services/nativeEngine";
 import { withSavedDeckLibrary } from "../services/savedDeckTransaction";
 import { attemptSavedDeckWrite } from "../services/savedDeckWriteFailure";
 import { useCardDataStore } from "../stores/cardDataStore";
 import { saveActiveGame, useGameStore } from "../stores/gameStore";
-import { FORMAT_DEFAULTS } from "../stores/multiplayerStore";
+import { FORMAT_DEFAULTS, useMultiplayerStore, type HostingSettings } from "../stores/multiplayerStore";
 import { usePreferencesStore } from "../stores/preferencesStore";
 
 const YOU_DECK = "MatchLab · You";
@@ -204,6 +207,10 @@ export function MatchLabPage() {
     return null;
   });
   const autoStarted = useRef(false);
+  const hostingStatus = useMultiplayerStore((s) => s.hostingStatus);
+  const hostGameCode = useMultiplayerStore((s) => s.hostGameCode);
+  const playerSlots = useMultiplayerStore((s) => s.playerSlots);
+  const hosting = hostingStatus !== "idle";
 
   useEffect(() => {
     // Deep links land here directly, so warm the card DB like every deck page does.
@@ -337,9 +344,9 @@ export function MatchLabPage() {
           return;
         }
         localStorage.setItem(ACTIVE_DECK_KEY, YOU_DECK);
-        const gameId = crypto.randomUUID();
-        useGameStore.setState({ gameId });
         if (role === "join") {
+          const gameId = crypto.randomUUID();
+          useGameStore.setState({ gameId });
           // Same route as MultiplayerPage.navigateDirectP2PJoin: the host's room sets the rules.
           navigate(`/game/${gameId}?mode=p2p-join&code=${code}`);
           return;
@@ -349,13 +356,32 @@ export function MatchLabPage() {
           setError(`Format ${draft.format} is not available in this build.`);
           return;
         }
-        const formatConfig: FormatConfig = draft.life ? { ...base, starting_life: draft.life } : base;
-        // GameProvider opens the room, shows the code and waits for the guest.
-        // useBroker:false = pure PeerJS room shared by code: never listed on (or
-        // routed through) the phase.rs lobby servers, whatever the cached server mode.
-        navigate(`/game/${gameId}?mode=p2p-host&format=${draft.format}&players=2&match=bo1`, {
-          state: { formatConfig, useBroker: false },
-        });
+        const formatConfig: FormatConfig = {
+          ...base,
+          max_players: 2,
+          ...(draft.life ? { starting_life: draft.life } : {}),
+        };
+        const mp = useMultiplayerStore.getState();
+        const settings: HostingSettings = {
+          displayName: mp.displayName || "Host",
+          public: false,
+          password: "",
+          timerSeconds: null,
+          formatConfig,
+          matchType: "Bo1",
+          loopDetection: { type: "Interactive" },
+          aiSeats: [],
+          startWhenFull: true,
+          roomName: null,
+          ranked: false,
+        };
+        // Pure PeerJS room shared by code (brokerUrl null = never listed on the
+        // phase.rs lobby servers). The room code shows on this page; the match
+        // opens by itself when the friend joins.
+        const ok = await mp.startP2PHostingSession(settings, expandParsedDeck(you.deck), { brokerUrl: null });
+        if (!ok && useMultiplayerStore.getState().hostingStatus === "idle") {
+          setError("Could not open the room. Check your connection and try again.");
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -441,9 +467,7 @@ export function MatchLabPage() {
       <div className="menu-scene__haze" />
 
       <MenuShell
-        eyebrow="Rogue Forge · MatchLab"
         title="Test a match"
-        description="Paste your list and the opponent's, or pick a test deck for either side. Arena-style board, AI opponent, nothing else."
         layout="stacked"
       >
         <div className="flex flex-col gap-4">
@@ -481,16 +505,51 @@ export function MatchLabPage() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <div className="text-sm font-semibold text-white/85">1 · Host</div>
-                  <p className="text-xs text-white/55">Uses the format, starting life and match rules below.</p>
-                  <button
-                    type="button"
-                    className={menuButtonClass({ tone: "amber", size: "lg", disabled: busy || cardDataLoading })}
-                    disabled={busy || cardDataLoading}
-                    onClick={() => void startFriend("host")}
-                  >
-                    {cardDataLoading ? "Loading cards…" : "Create room ▸"}
-                  </button>
+                  {hosting ? (
+                    <div className="flex flex-col gap-3 rounded-[10px] border border-emerald-400/30 bg-emerald-950/30 p-4">
+                      {hostingStatus === "connecting" || !hostGameCode ? (
+                        <div className="text-sm text-white/75">Opening the room…</div>
+                      ) : (
+                        <>
+                          <div className="text-xs uppercase tracking-[0.18em] text-emerald-200/80">Room code</div>
+                          <button
+                            type="button"
+                            title="Copy"
+                            className="self-start font-mono text-4xl font-bold tracking-[0.35em] text-emerald-300"
+                            onClick={() => void navigator.clipboard?.writeText(hostGameCode).catch(() => {})}
+                          >
+                            {hostGameCode}
+                          </button>
+                          <div className="text-sm text-white/75">
+                            Waiting for your friend… ({playerSlots.filter((p) => p.kind.type !== "WaitingHuman").length || 1}/2)
+                            <br />
+                            <span className="text-xs text-white/55">The match starts by itself as soon as they join. Keep this page open.</span>
+                          </div>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        className={menuButtonClass({ tone: "neutral", size: "md" })}
+                        onClick={() => useMultiplayerStore.getState().cancelHosting()}
+                      >
+                        Cancel room
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-white/55">Uses the format and starting life below.</p>
+                      <button
+                        type="button"
+                        className={menuButtonClass({ tone: "amber", size: "lg", disabled: busy || cardDataLoading })}
+                        disabled={busy || cardDataLoading}
+                        onClick={() => void startFriend("host")}
+                      >
+                        {cardDataLoading ? "Loading cards…" : "Create room ▸"}
+                      </button>
+                    </>
+                  )}
                 </div>
+                {!hosting && (
                 <div className="flex flex-col gap-2">
                   <div className="text-sm font-semibold text-white/85">2 · Join</div>
                   <div className="flex gap-2">
@@ -514,6 +573,7 @@ export function MatchLabPage() {
                     </button>
                   </div>
                 </div>
+                )}
               </MenuPanel>
             )}
           </div>
