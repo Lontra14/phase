@@ -24,6 +24,8 @@ echo "== 1/5 Scryfall image + set data"
 ./scripts/gen-scryfall-printings.sh & c=$!
 ./scripts/gen-scryfall-sets.sh & d=$!
 wait $a; wait $b; wait $c; wait $d
+# Progression mode: year-accurate booster index (reuses the default-cards download above).
+bash ./scripts/gen-progression-data.sh
 
 echo "== 2/5 client dependencies"
 (cd client && pnpm install --frozen-lockfile)
@@ -46,8 +48,9 @@ cp "$OUT/index.html" "$OUT/404.html"
 rm -f "$OUT"/card-data.{de,es,fr,it,ja,pt,zh}.json "$OUT"/scryfall-images.v2.{de,es,fr,it,ja,pt,zh}.json
 test -s "$OUT/index.html"
 test -s "$OUT/card-data.json"
+test -s "$OUT/progression-data.json"
 
 echo
 echo "Site ready in: $OUT  ($(du -sh "$OUT" | cut -f1))"
 echo "Largest files:"; find "$OUT" -type f -printf '%10s  %p\n' | sort -nr | head -8
-echo "Upload the CONTENTS of $OUT to the root of your (sub)domain, then open /lab"
+echo "Upload the CONTENTS of $OUT to the root of your (sub)domain, then open it: MatchLab is the home page"

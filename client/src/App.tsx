@@ -6,6 +6,8 @@ import { NativeEngineProgressOverlay } from "./components/chrome/NativeEnginePro
 import { RouteTelemetry } from "./components/chrome/RouteTelemetry";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { HostControlTile } from "./components/chrome/HostControlTile";
+import { ProgressionResultWatcher } from "./progression/ProgressionResultWatcher";
+import { isProgressionMatchPending } from "./progression/run";
 import { EngineLostModal } from "./components/modal/EngineLostModal";
 import { NonFatalPanicToast } from "./components/modal/NonFatalPanicToast";
 import { StuckDecisionToast } from "./components/modal/StuckDecisionToast";
@@ -25,6 +27,8 @@ const GamePage = lazy(() =>
 );
 const MatchLabPage = lazy(() => import("./pages/MatchLabPage").then((m) => ({ default: m.MatchLabPage })));
 const ReplayPage = lazy(() => import("./pages/ReplayPage").then((m) => ({ default: m.ReplayPage })));
+const HomePage = lazy(() => import("./pages/HomePage").then((m) => ({ default: m.HomePage })));
+const ProgressionPage = lazy(() => import("./pages/ProgressionPage").then((m) => ({ default: m.ProgressionPage })));
 
 function DevStrict({ children }: { children: ReactNode }) {
   if (!import.meta.env.DEV) return children;
@@ -34,7 +38,23 @@ function DevStrict({ children }: { children: ReactNode }) {
 /** Old /lab links (and roguelike deep links) keep their #you=…&opp=… hash. */
 function LabRedirect() {
   const location = useLocation();
-  return <Navigate to={{ pathname: "/", hash: location.hash }} replace />;
+  return <Navigate to={{ pathname: "/test", hash: location.hash }} replace />;
+}
+
+/**
+ * The match screen sends players to /setup or /multiplayer when something goes
+ * wrong (deck rejected, setup error). Route them back to the mode they came from.
+ */
+function BackFromGame() {
+  const location = useLocation();
+  if (isProgressionMatchPending()) {
+    return <Navigate to="/progression" replace state={location.state} />;
+  }
+  return (
+    <DevStrict>
+      <MatchLabPage />
+    </DevStrict>
+  );
 }
 
 function GameRouteElement() {
@@ -120,14 +140,16 @@ function AppContent() {
       <ErrorBoundary>
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-500 border-t-white" /></div>}>
         <Routes>
-          {/* Rogue Forge MatchLab build: the only screens are MatchLab and the
-              match itself. Every other phase.rs page is removed; any route the
-              game still navigates to (setup, multiplayer, menu…) lands on MatchLab,
-              which shows the reason it was sent back. */}
-          <Route path="/" element={<DevStrict><MatchLabPage /></DevStrict>} />
+          {/* Rogue Forge build: mode select, Test match (MatchLab), Progression
+              and the match itself. Every other phase.rs page is removed; routes
+              the game still navigates to (setup, multiplayer) go back to the
+              mode the player came from, which shows the reason. */}
+          <Route path="/" element={<DevStrict><HomePage /></DevStrict>} />
+          <Route path="/test" element={<DevStrict><MatchLabPage /></DevStrict>} />
+          <Route path="/progression" element={<DevStrict><ProgressionPage /></DevStrict>} />
           <Route path="/lab" element={<LabRedirect />} />
-          <Route path="/setup" element={<DevStrict><MatchLabPage /></DevStrict>} />
-          <Route path="/multiplayer" element={<DevStrict><MatchLabPage /></DevStrict>} />
+          <Route path="/setup" element={<BackFromGame />} />
+          <Route path="/multiplayer" element={<BackFromGame />} />
           <Route path="/game/:id" element={<GameRouteElement />} />
           <Route path="/replay" element={<ReplayPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -135,6 +157,7 @@ function AppContent() {
       </Suspense>
       </ErrorBoundary>
       <HostControlTile />
+      <ProgressionResultWatcher />
       <AppToast />
       <NativeEngineProgressOverlay />
       <EngineLostModal />

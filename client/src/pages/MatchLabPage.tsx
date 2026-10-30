@@ -462,7 +462,7 @@ export function MatchLabPage() {
   return (
     <div className="menu-scene relative flex min-h-screen flex-col overflow-hidden">
       <MenuParticles />
-      <ScreenChrome />
+      <ScreenChrome onBack={() => navigate("/")} />
       <div className="menu-scene__vignette" />
       <div className="menu-scene__haze" />
 
