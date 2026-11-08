@@ -44,7 +44,12 @@ echo "== 5/5 client (type-check + bundle)"
 
 rm -rf "$OUT"
 cp -r client/dist "$OUT"
-cp deploy/matchlab/.htaccess deploy/matchlab/turn.json "$OUT/"
+# The server rules: deploy/matchlab/htaccess.txt (a visible name, so web uploads
+# keep it), else the hidden .htaccess; the TURN relays as they are.
+if [ -f deploy/matchlab/htaccess.txt ]; then cp deploy/matchlab/htaccess.txt "$OUT/.htaccess"
+elif [ -f deploy/matchlab/.htaccess ]; then cp deploy/matchlab/.htaccess "$OUT/.htaccess"
+else echo "warning: no deploy/matchlab/htaccess.txt — the site has no .htaccess" >&2; fi
+cp deploy/matchlab/turn.json "$OUT/"
 cp "$OUT/index.html" "$OUT/404.html"
 # Non-English sidecars fall back to English when missing; dropping them saves space.
 rm -f "$OUT"/card-data.{de,es,fr,it,ja,pt,zh}.json "$OUT"/scryfall-images.v2.{de,es,fr,it,ja,pt,zh}.json
