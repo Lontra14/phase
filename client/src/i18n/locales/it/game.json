@@ -2286,11 +2286,11 @@
   },
   "engineLost": {
     "crashTitle": "Il motore è andato in crash",
-    "crashBody": "phase.rs ha riscontrato un errore interno e non può continuare in sicurezza questa azione. Il tuo ultimo turno salvato è preservato — ricarica per ripristinare la partita. <strong>Segnala questo problema</strong> così possiamo correggerlo.",
+    "crashBody": "Pay the 1 pt1 ha riscontrato un errore interno e non può continuare in sicurezza questa azione. Il tuo ultimo turno salvato è preservato — ricarica per ripristinare la partita. <strong>Segnala questo problema</strong> così possiamo correggerlo.",
     "connectionTitle": "Connessione al motore persa",
-    "connectionBody": "phase.rs ha perso il collegamento con il motore di gioco — più spesso causato da un aggiornamento in background attivatosi a metà partita. Il tuo ultimo turno salvato è preservato; ricarica per ripristinare la partita.",
+    "connectionBody": "Pay the 1 pt1 ha perso il collegamento con il motore di gioco — più spesso causato da un aggiornamento in background attivatosi a metà partita. Il tuo ultimo turno salvato è preservato; ricarica per ripristinare la partita.",
     "timeoutTitle": "Il motore ha impiegato troppo tempo",
-    "timeoutBody": "phase.rs non è riuscito a completare il calcolo di questa azione entro il limite di tempo. Può accadere su campi di gioco molto complessi (ad esempio, centinaia di pedine). Il tuo ultimo turno salvato è preservato: ricarica per ripristinare la partita e valuta di esportare lo stato per segnalarlo.",
+    "timeoutBody": "Pay the 1 pt1 non è riuscito a completare il calcolo di questa azione entro il limite di tempo. Può accadere su campi di gioco molto complessi (ad esempio, centinaia di pedine). Il tuo ultimo turno salvato è preservato: ricarica per ripristinare la partita e valuta di esportare lo stato per segnalarlo.",
     "diagnostic": "diagnostica: {{reason}}",
     "showDetails": "Mostra dettagli",
     "exportGameState": "Esporta stato partita",
@@ -2374,7 +2374,7 @@
   "nonFatalPanic": {
     "heading": "Avviso del motore (non fatale)",
     "dismiss": "Ignora",
-    "body": "phase.rs ha riscontrato un avviso interno ma si è ripreso. La partita può continuare in sicurezza. Per favore <report>segnalalo</report> così possiamo investigare.",
+    "body": "Pay the 1 pt1 ha riscontrato un avviso interno ma si è ripreso. La partita può continuare in sicurezza. Per favore <report>segnalalo</report> così possiamo investigare.",
     "dontShowAgain": "Non mostrare di nuovo in questa sessione",
     "reportTitle": "Panic non fatale del motore: {{summary}}",
     "reportWhatHappened": "**Cosa è successo**\n_descrivi brevemente cosa stavi facendo_\n\n**Diagnostica**\n```\n{{diagnostic}}\n```"
@@ -2382,7 +2382,7 @@
   "stuckDecision": {
     "heading": "Game appears stuck",
     "dismiss": "Dismiss",
-    "body": "phase.rs is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
+    "body": "Pay the 1 pt1 is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
     "dontShowAgain": "Don’t show again this session",
     "reportTitle": "Stuck decision: {{kind}}",
     "reportWhatHappened": "**What happened**\n_briefly describe what you were doing_\n\n**Diagnostic**\n```\n{{diagnostic}}\n```"
@@ -2596,7 +2596,7 @@
   },
   "unhandledWaitingFor": {
     "title": "Azione richiesta, ma manca l'interfaccia",
-    "body": "La partita è in attesa di un'azione da parte tua, ma questa versione di phase.rs non ha ancora un'interfaccia per essa. Questo è un bug — per favore segnalalo così possiamo correggerlo. Usa il pulsante qui sotto per uscire dalla partita.",
+    "body": "La partita è in attesa di un'azione da parte tua, ma questa versione di Pay the 1 pt1 non ha ancora un'interfaccia per essa. Questo è un bug — per favore segnalalo così possiamo correggerlo. Usa il pulsante qui sotto per uscire dalla partita.",
     "missingState": "Stato mancante",
     "copyDiagnostic": "Copia diagnostica",
     "copied": "Copiato!",

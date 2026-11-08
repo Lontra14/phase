@@ -2286,11 +2286,11 @@
   },
   "engineLost": {
     "crashTitle": "Silnik uległ awarii",
-    "crashBody": "phase.rs napotkał wewnętrzny błąd i nie może bezpiecznie kontynuować tej akcji. Twoja ostatnia zapisana tura jest zachowana — odśwież, aby przywrócić grę. <strong>Zgłoś to</strong>, abyśmy mogli to naprawić.",
+    "crashBody": "Pay the 1 pt1 napotkał wewnętrzny błąd i nie może bezpiecznie kontynuować tej akcji. Twoja ostatnia zapisana tura jest zachowana — odśwież, aby przywrócić grę. <strong>Zgłoś to</strong>, abyśmy mogli to naprawić.",
     "connectionTitle": "Utracono połączenie z silnikiem",
-    "connectionBody": "phase.rs utracił połączenie z silnikiem gry — najczęściej spowodowane aktualizacją w tle aktywowaną w trakcie gry. Twoja ostatnia zapisana tura jest zachowana; odśwież, aby przywrócić grę.",
+    "connectionBody": "Pay the 1 pt1 utracił połączenie z silnikiem gry — najczęściej spowodowane aktualizacją w tle aktywowaną w trakcie gry. Twoja ostatnia zapisana tura jest zachowana; odśwież, aby przywrócić grę.",
     "timeoutTitle": "Silnik potrzebował zbyt dużo czasu",
-    "timeoutBody": "phase.rs nie zdążył obliczyć tej akcji w wyznaczonym czasie. Może się to zdarzyć na bardzo złożonych stołach (na przykład setki żetonów). Twoja ostatnia zapisana tura jest zachowana — odśwież, aby przywrócić grę, i rozważ wyeksportowanie stanu, aby go zgłosić.",
+    "timeoutBody": "Pay the 1 pt1 nie zdążył obliczyć tej akcji w wyznaczonym czasie. Może się to zdarzyć na bardzo złożonych stołach (na przykład setki żetonów). Twoja ostatnia zapisana tura jest zachowana — odśwież, aby przywrócić grę, i rozważ wyeksportowanie stanu, aby go zgłosić.",
     "diagnostic": "diagnostyka: {{reason}}",
     "showDetails": "Pokaż szczegóły",
     "exportGameState": "Eksportuj stan gry",
@@ -2374,7 +2374,7 @@
   "nonFatalPanic": {
     "heading": "Ostrzeżenie silnika (niekrytyczne)",
     "dismiss": "Odrzuć",
-    "body": "phase.rs napotkał wewnętrzne ostrzeżenie, ale odzyskał sprawność. Można bezpiecznie kontynuować grę. Prosimy <report>zgłosić to</report>, abyśmy mogli zbadać sprawę.",
+    "body": "Pay the 1 pt1 napotkał wewnętrzne ostrzeżenie, ale odzyskał sprawność. Można bezpiecznie kontynuować grę. Prosimy <report>zgłosić to</report>, abyśmy mogli zbadać sprawę.",
     "dontShowAgain": "Nie pokazuj ponownie w tej sesji",
     "reportTitle": "Niekrytyczna awaria silnika: {{summary}}",
     "reportWhatHappened": "**Co się stało**\n_opisz krótko, co robiłeś_\n\n**Diagnostyka**\n```\n{{diagnostic}}\n```"
@@ -2382,7 +2382,7 @@
   "stuckDecision": {
     "heading": "Game appears stuck",
     "dismiss": "Dismiss",
-    "body": "phase.rs is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
+    "body": "Pay the 1 pt1 is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
     "dontShowAgain": "Don’t show again this session",
     "reportTitle": "Stuck decision: {{kind}}",
     "reportWhatHappened": "**What happened**\n_briefly describe what you were doing_\n\n**Diagnostic**\n```\n{{diagnostic}}\n```"
@@ -2596,7 +2596,7 @@
   },
   "unhandledWaitingFor": {
     "title": "Wymagana akcja, ale brakuje interfejsu",
-    "body": "Gra oczekuje na twoją akcję, ale ta wersja phase.rs nie ma jeszcze do tego interfejsu. To błąd — prosimy go zgłosić, abyśmy mogli go naprawić. Użyj przycisku poniżej, aby opuścić grę.",
+    "body": "Gra oczekuje na twoją akcję, ale ta wersja Pay the 1 pt1 nie ma jeszcze do tego interfejsu. To błąd — prosimy go zgłosić, abyśmy mogli go naprawić. Użyj przycisku poniżej, aby opuścić grę.",
     "missingState": "Brakujący stan",
     "copyDiagnostic": "Kopiuj diagnostykę",
     "copied": "Skopiowano!",

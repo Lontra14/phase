@@ -43,7 +43,7 @@ export function FullscreenButton({ variant }: FullscreenButtonProps) {
               const fullscreen = await appWindow.isFullscreen();
               if (active) setIsFullscreen(fullscreen);
             } catch (error) {
-              console.warn("[phase.rs] Could not synchronize Tauri fullscreen state.", error);
+              console.warn("[pt1] Could not synchronize Tauri fullscreen state.", error);
             }
           };
 
@@ -57,7 +57,7 @@ export function FullscreenButton({ variant }: FullscreenButtonProps) {
             removeResizeListener();
           }
         } catch (error) {
-          console.warn("[phase.rs] Could not synchronize Tauri fullscreen state.", error);
+          console.warn("[pt1] Could not synchronize Tauri fullscreen state.", error);
         }
       })();
 
@@ -95,7 +95,7 @@ export function FullscreenButton({ variant }: FullscreenButtonProps) {
         await document.documentElement.requestFullscreen();
       }
     } catch (error) {
-      console.warn("[phase.rs] Could not toggle fullscreen.", error);
+      console.warn("[pt1] Could not toggle fullscreen.", error);
     }
   }, [desktopTauri, unknownOrMobileTauri]);
 

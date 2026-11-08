@@ -129,7 +129,7 @@ export function WhatsNewModal({
 
   return (
     <DialogShell
-      eyebrow="phase.rs"
+      eyebrow="Pay the 1 pt1"
       title={t("whatsNew.title")}
       size="lg"
       scrollable

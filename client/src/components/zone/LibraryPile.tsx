@@ -171,6 +171,7 @@ export function LibraryPile({ playerId, size, onView }: LibraryPileProps) {
 
   return (
     <div
+      data-rf-owner={isMyLibrary ? "me" : "opp"}
       className="relative"
       title={canPlay ? playLabel : libraryLabel}
       data-library-pile={pileSeat}

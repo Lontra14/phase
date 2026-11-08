@@ -307,7 +307,7 @@ function buildDefaultPreferences(): PreferencesState {
     sfxVolume: 70,
     musicVolume: 40,
     sfxMuted: false,
-    musicMuted: false,
+    musicMuted: true,
     masterMuted: false,
     audioThemeId: "planeswalker",
     customThemeUrls: [],

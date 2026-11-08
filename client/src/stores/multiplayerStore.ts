@@ -2696,6 +2696,7 @@ function handleServerHostMessage(
     savePregameHostSession(get, data, serverUrl, held);
     // Reset reconnect counter on successful (re)connection.
     hostReconnectAttempt = 0;
+    try { sessionStorage.setItem("rf-last-host-code", String(data.game_code)); } catch { /* ignore */ }
     set({ hostGameCode: data.game_code, hostingStatus: "waiting" });
   } else if (msg.type === "GameStarted") {
     gameStartedFired = true;
@@ -3528,6 +3529,7 @@ export const useMultiplayerStore = create<MultiplayerState & MultiplayerActions>
           }
           destroyHostedRoom = null;
 
+          try { sessionStorage.setItem("rf-last-host-code", String(host.roomCode)); } catch { /* ignore */ }
           set({
             hostIsPublic: opts.brokerUrl !== null && settings.public,
             hostingStatus: "waiting",

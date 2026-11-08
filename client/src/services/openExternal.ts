@@ -18,7 +18,7 @@ export function openExternal(url: string): void {
     void import("@tauri-apps/plugin-opener")
       .then(({ openUrl }) => openUrl(url))
       .catch((err: unknown) => {
-        console.warn("[phase.rs] Failed to open external URL via Tauri opener.", err);
+        console.warn("[pt1] Failed to open external URL via Tauri opener.", err);
       });
   } else {
     window.open(url, "_blank", "noopener,noreferrer");

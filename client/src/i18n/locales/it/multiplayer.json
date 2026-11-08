@@ -328,7 +328,7 @@
     "waitingForHostMessage": "L'host non ha ancora aperto questa partita, oppure è stata chiusa. Riprova quando l'host avrà aperto il suo link.",
     "botLinkBrokerUnreachable": "Impossibile raggiungere il server della lobby per aprire questa partita Discord. Controlla la connessione, poi riapri il tuo link da host.",
     "updatingTitle": "Aggiornamento all'ultima versione…",
-    "updatingMessage": "È disponibile una versione più recente di phase.rs. La pagina si ricaricherà quando sarà pronta.",
+    "updatingMessage": "È disponibile una versione più recente di Pay the 1 pt1. La pagina si ricaricherà quando sarà pronta.",
     "refreshAfterGame": "Termina la partita in corso, poi aggiorna per passare alla nuova versione.",
     "updateFailedTitle": "Impossibile aggiornare automaticamente",
     "updateFailedMessage": "Aggiorna per ottenere l'ultima versione, oppure continua con questa. I giocatori con versioni diverse non possono unirsi alla stessa partita.",
@@ -345,7 +345,7 @@
     "codeInUse": "Il codice di questa partita è ancora occupato da una stanza precedente. Attendi qualche minuto, poi riapri il tuo link da host da Discord. Se continua a succedere, avvia un nuovo /lfg."
   },
   "openDesktop": {
-    "title": "Apertura dell'app desktop di phase.rs…",
+    "title": "Apertura dell'app desktop di Pay the 1 pt1…",
     "invalid": "Questo link non può essere aperto nell'app desktop.",
     "openApp": "Apri l'app desktop",
     "continueInBrowser": "Non si è aperta? Continua nel browser",

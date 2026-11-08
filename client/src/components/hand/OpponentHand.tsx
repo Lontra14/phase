@@ -145,6 +145,7 @@ function HiddenOpponentCardThumbnail() {
 
   return (
     <img
+      data-rf-owner="opp"
       src={src ?? CARD_BACK_URL}
       alt={t("hand.cardBack")}
       className="rounded-lg border border-gray-600 shadow-md object-cover"

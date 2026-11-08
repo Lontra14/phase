@@ -110,7 +110,7 @@ async function runInstall(update: Update, ownsStatus: boolean): Promise<void> {
     await relaunch();
   } catch (error: unknown) {
     if (ownsStatus) setUpdateError(`Tauri update install failed: ${formatError(error)}`);
-    console.warn("[phase.rs] Tauri update install failed.", error);
+    console.warn("[pt1] Tauri update install failed.", error);
   } finally {
     if (ownsStatus) {
       setUpdateStatus("idle");
@@ -168,7 +168,7 @@ async function runCheck(candidate: Lifecycle, reason: "startup" | "resume" | "in
   } catch (error: unknown) {
     if (isCurrent(candidate) && checkToken === candidate.token && policyGeneration === candidate.policyGeneration && !getEffectiveOffline()) {
       setUpdateError(`Tauri update check failed: ${formatError(error)}`);
-      console.warn("[phase.rs] Tauri update check failed.", error);
+      console.warn("[pt1] Tauri update check failed.", error);
     }
     return;
   }

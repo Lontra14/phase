@@ -31,14 +31,14 @@ export function SplashScreen({ progress, onComplete, label }: SplashScreenProps)
         >
           <motion.img
             src="/logo.webp"
-            alt="phase.rs"
+            alt="Pay the 1 pt1"
             className="mb-4 w-[160px]"
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
           />
 
-          <p className="mb-6 text-sm tracking-wider text-gray-500">phase.rs</p>
+          <p className="mb-6 text-sm tracking-wider text-gray-500">Pay the 1 pt1</p>
 
           <div className="h-1 w-[200px] overflow-hidden rounded-full bg-gray-800">
             <motion.div

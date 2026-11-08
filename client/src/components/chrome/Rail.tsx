@@ -43,7 +43,7 @@ export function Rail({ onSettings, onWhatsNew, hasUnread }: RailProps) {
       >
         <img
           src="/logo_only.webp"
-          alt="phase.rs"
+          alt="Pay the 1 pt1"
           className="w-10 [@media(max-height:540px)]:w-8"
         />
       </button>

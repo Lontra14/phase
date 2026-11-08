@@ -1400,13 +1400,13 @@
     "tooltip_other": "{{count}}个结界 —— 悬停以预览，点击以查看"
   },
   "engineLost": {
-    "connectionBody": "phase.rs 与游戏引擎的连接已断开 —— 通常是由于后台更新在游戏中途生效所致。你上次保存的回合已保留；重新加载即可恢复游戏。",
+    "connectionBody": "Pay the 1 pt1 与游戏引擎的连接已断开 —— 通常是由于后台更新在游戏中途生效所致。你上次保存的回合已保留；重新加载即可恢复游戏。",
     "connectionTitle": "引擎连接已断开",
     "continueWaiting": "继续等待",
     "copied": "已复制！",
     "copyDiagnostic": "复制诊断信息",
     "copyPrompt": "复制此诊断信息：",
-    "crashBody": "phase.rs 遇到了内部错误，无法安全继续此动作。你上次保存的回合已保留 —— 重新加载即可恢复游戏。<strong>请报告此问题</strong>，以便我们修复。",
+    "crashBody": "Pay the 1 pt1 遇到了内部错误，无法安全继续此动作。你上次保存的回合已保留 —— 重新加载即可恢复游戏。<strong>请报告此问题</strong>，以便我们修复。",
     "crashTitle": "引擎崩溃",
     "diagnostic": "诊断信息：{{reason}}",
     "exportClientSnapshot": "导出客户端快照",
@@ -1420,7 +1420,7 @@
     "reportTitle": "引擎崩溃：{{summary}}",
     "reportWhatHappened": "**发生了什么**\n_简要描述你当时在做什么_\n\n**诊断信息**\n```\n{{diagnostic}}\n```",
     "showDetails": "显示详情",
-    "timeoutBody": "phase.rs 计算此动作已花费较长时间。这在非常复杂的场面下可能发生，且该操作仍在运行中。你可以继续等待，若认为它已卡死则重新加载。",
+    "timeoutBody": "Pay the 1 pt1 计算此动作已花费较长时间。这在非常复杂的场面下可能发生，且该操作仍在运行中。你可以继续等待，若认为它已卡死则重新加载。",
     "timeoutTitle": "引擎耗时过长"
   },
   "entryController": {
@@ -2082,7 +2082,7 @@
     "tooltip": "下一个回合属于该牌手。"
   },
   "nonFatalPanic": {
-    "body": "phase.rs 遇到了内部警告，但已恢复。游戏仍可安全继续。请<report>报告此问题</report>，以便我们调查。",
+    "body": "Pay the 1 pt1 遇到了内部警告，但已恢复。游戏仍可安全继续。请<report>报告此问题</report>，以便我们调查。",
     "dismiss": "忽略",
     "dontShowAgain": "本次会话中不再显示",
     "heading": "引擎警告（非致命）",
@@ -2625,7 +2625,7 @@
     "count_other": "风暴计数：{{count}}个复制品"
   },
   "stuckDecision": {
-    "body": "phase.rs 正在等待一个没有任何可用动作的决策，因此游戏无法继续。这是一个程序错误。请<report>报告此问题</report>，以便我们调查。",
+    "body": "Pay the 1 pt1 正在等待一个没有任何可用动作的决策，因此游戏无法继续。这是一个程序错误。请<report>报告此问题</report>，以便我们调查。",
     "dismiss": "忽略",
     "dontShowAgain": "本次会话中不再显示",
     "heading": "游戏似乎卡住了",
@@ -2722,7 +2722,7 @@
     "triggerFallback": "触发式异能 {{number}}"
   },
   "unhandledWaitingFor": {
-    "body": "游戏正在等待你执行一项操作，但此版本的 phase.rs 还没有相应的界面。这是一个程序错误 —— 请反馈给我们，以便修复。使用下方按钮离开对局。",
+    "body": "游戏正在等待你执行一项操作，但此版本的 Pay the 1 pt1 还没有相应的界面。这是一个程序错误 —— 请反馈给我们，以便修复。使用下方按钮离开对局。",
     "copied": "已复制！",
     "copyDiagnostic": "复制诊断信息",
     "copyPrompt": "复制此诊断信息：",

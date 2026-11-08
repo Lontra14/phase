@@ -331,7 +331,7 @@ export function HomeDashboard() {
     <div className="flex w-full flex-col items-start">
       <img
         src="/wordmark.webp"
-        alt="phase.rs"
+        alt="Pay the 1 pt1"
         className="h-10 w-auto drop-shadow-[0_0_16px_rgba(251,146,60,0.25)]"
       />
       <p className="mt-3 max-w-xl text-[1.02rem] leading-relaxed text-fg-muted">

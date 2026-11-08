@@ -219,7 +219,7 @@
     "getDesktopApp": "获取桌面应用",
     "invalid": "此链接无法在桌面应用中打开。",
     "openApp": "打开桌面应用",
-    "title": "正在打开 phase.rs 桌面应用…"
+    "title": "正在打开 Pay the 1 pt1 桌面应用…"
   },
   "page": {
     "activeDeck": "当前套牌",
@@ -260,7 +260,7 @@
     "titleLobby": "加入或创建牌桌。",
     "updateFailedMessage": "刷新以获取最新版本，或继续使用当前版本。不同版本的牌手无法加入同一牌局。",
     "updateFailedTitle": "无法自动更新",
-    "updatingMessage": "phase.rs 有新版本发布。准备就绪后页面会重新加载。",
+    "updatingMessage": "Pay the 1 pt1 有新版本发布。准备就绪后页面会重新加载。",
     "updatingTitle": "正在更新到最新版本…",
     "waitingForHostMessage": "房主尚未打开此牌局，或牌局已关闭。待房主打开其链接后重试。",
     "waitingForHostTitle": "正在等待房主…"

@@ -22,6 +22,7 @@ import { faceDownMarkerRef } from "./faceDownMarker.ts";
 import { shouldRenderCardBack } from "../../viewmodel/cardProps.ts";
 import type { CardRuling } from "../../services/engineRuntime.ts";
 import { useGameStore } from "../../stores/gameStore.ts";
+import { usePlayerId } from "../../hooks/usePlayerId.ts";
 import { useBackFaceSpellCost } from "../../hooks/useBackFaceSpellCost.ts";
 import { usePreferencesStore } from "../../stores/preferencesStore.ts";
 import { useUiStore, type MobileHandGesture } from "../../stores/uiStore.ts";
@@ -310,6 +311,8 @@ function CardPreviewInner({
   const obj = useGameStore((s) =>
     previewObjectId != null ? s.gameState?.objects[previewObjectId] ?? null : null,
   );
+  // Rogue Forge: whose card is previewed (each player's basic land art / card back).
+  const rfMe = usePlayerId();
   // Catalog previews may inherit legacy inspection metadata, but not owner art.
   const ownerLookup = objectId !== undefined && obj ? cardImageLookup(obj) : undefined;
   const ownerPrinting = ownerLookup?.ownerPrinting;
@@ -785,6 +788,7 @@ function CardPreviewInner({
         onDismiss={onDismiss ?? dismissPreview}
         layout={mobileLayout ?? "modal"}
         report={reportContext}
+        rfOwner={obj ? (obj.controller === rfMe ? "me" : "opp") : undefined}
       />
     );
   }
@@ -840,6 +844,7 @@ function CardPreviewInner({
               }
             : { duration: 0.08 * animationSpeedMultiplier }
         }
+        data-rf-owner={obj ? (obj.controller === rfMe ? "me" : "opp") : undefined}
         data-mobile-hand-preview-state={mobileHandPreviewState}
         data-mobile-hand-preview-wobble={wobbleHeldPreview || undefined}
       >
@@ -886,7 +891,10 @@ function MobilePreviewOverlay({
   onDismiss,
   layout = "modal",
   report,
+  rfOwner,
 }: {
+  /** Rogue Forge: whose card this is (each player's basic land art / card back). */
+  rfOwner?: "me" | "opp";
   cardName: string;
   /** The parent's RESOLVED art state (marker / generic back / peek already
    *  applied). The overlay must never run its own lookup: a second
@@ -945,6 +953,7 @@ function MobilePreviewOverlay({
       <div
         className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center p-4"
         data-card-preview
+        data-rf-owner={rfOwner}
       >
         {art.kind === "back" ? (
           <CardBackFallback className="pointer-events-auto max-h-[60vh] max-w-[68vw] w-[68vw] rounded-xl border border-white/15 shadow-2xl" />
@@ -982,6 +991,7 @@ function MobilePreviewOverlay({
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 landscape:justify-end landscape:p-6"
       data-card-preview
+      data-rf-owner={rfOwner}
       onPointerDown={onDismiss}
     >
       <div

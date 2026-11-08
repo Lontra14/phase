@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useCosmeticsLink } from "../progression/cosmeticsLink";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AnimatePresence, motion } from "framer-motion";
@@ -37,6 +38,7 @@ import type {
   InteractionPresentationSurface,
   ViewerInteraction,
 } from "../adapter/generated/interaction";
+import { pendingMatchRoute } from "../progression/run";
 import { useDraftStore } from "../stores/draftStore";
 import { loadActiveQuickDraft } from "../services/quickDraftPersistence";
 import type { DraftMatchResult } from "../services/quickDraftPersistence";
@@ -376,6 +378,23 @@ export function GamePage() {
                 ? "ai"
                 : "local";
   const isOnlineMode = mode === "online" || mode === "spectate";
+  // Rogue Forge: swap card backs / basic land arts with the other device (P2P games).
+  // The host's room code is cleared from the store when the game starts, so the
+  // last one is kept (sessionStorage, written when the room opened) and never dropped.
+  const rfHostCodeLive = useMultiplayerStore((s) => s.hostGameCode);
+  const rfHostCodeRef = useRef<string | null>(null);
+  if (rfHostCodeLive) rfHostCodeRef.current = rfHostCodeLive;
+  if (!rfHostCodeRef.current && mode === "p2p-host") {
+    try {
+      rfHostCodeRef.current = sessionStorage.getItem("rf-last-host-code");
+    } catch {
+      // ignore
+    }
+  }
+  useCosmeticsLink(
+    mode === "p2p-host" ? "host" : mode === "p2p-join" ? "guest" : mode === "ai" ? "ai" : null,
+    (mode === "p2p-host" ? rfHostCodeRef.current : joinCode)?.trim().toUpperCase() || null,
+  );
 
   const [showCardDataMissing, setShowCardDataMissing] = useState(false);
 
@@ -3070,6 +3089,8 @@ function GameOverScreen({
   const draftId = searchParams.get("draftId");
   const isDraft = source === "draft" && !!draftId;
   const isDraftPodMatch = mode === "draft-match";
+  // Rogue Forge Progression / Starter: the match is one step of a run — no rematch, go on to the rewards.
+  const [progressionMatch] = useState(pendingMatchRoute);
   const gameId = useGameStore((s) => s.gameId);
 
   const [resultRecorded, setResultRecorded] = useState(false);
@@ -3210,7 +3231,18 @@ function GameOverScreen({
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15, duration: 0.3 }}
           >
-            {isDraft ? (
+            {progressionMatch ? (
+              <button
+                onClick={() => navigate(progressionMatch ?? "/")}
+                className={gameButtonClass({
+                  tone: isVictory ? "amber" : "slate",
+                  size: "lg",
+                  className: "w-full justify-center sm:w-auto sm:min-w-[12rem]",
+                })}
+              >
+                Continue ▸
+              </button>
+            ) : isDraft ? (
               <button
                 disabled={!resultRecorded}
                 onClick={handleBackToDraft}

@@ -2286,11 +2286,11 @@
   },
   "engineLost": {
     "crashTitle": "O motor travou",
-    "crashBody": "phase.rs encontrou um erro interno e não pode continuar esta ação com segurança. Seu último turno salvo está preservado — recarregue para restaurar o jogo. <strong>Por favor, reporte isso</strong> para que possamos corrigir.",
+    "crashBody": "Pay the 1 pt1 encontrou um erro interno e não pode continuar esta ação com segurança. Seu último turno salvo está preservado — recarregue para restaurar o jogo. <strong>Por favor, reporte isso</strong> para que possamos corrigir.",
     "connectionTitle": "Conexão com o motor perdida",
-    "connectionBody": "phase.rs perdeu o vínculo com o motor do jogo — na maioria das vezes causado por uma atualização em segundo plano ativando-se no meio do jogo. Seu último turno salvo está preservado; recarregue para restaurar o jogo.",
+    "connectionBody": "Pay the 1 pt1 perdeu o vínculo com o motor do jogo — na maioria das vezes causado por uma atualização em segundo plano ativando-se no meio do jogo. Seu último turno salvo está preservado; recarregue para restaurar o jogo.",
     "timeoutTitle": "O motor demorou demais",
-    "timeoutBody": "phase.rs não conseguiu terminar de calcular esta ação dentro do limite de tempo. Isso pode acontecer em mesas muito complexas (por exemplo, centenas de fichas). Seu último turno salvo está preservado — recarregue para restaurar o jogo e considere exportar o estado para reportá-lo.",
+    "timeoutBody": "Pay the 1 pt1 não conseguiu terminar de calcular esta ação dentro do limite de tempo. Isso pode acontecer em mesas muito complexas (por exemplo, centenas de fichas). Seu último turno salvo está preservado — recarregue para restaurar o jogo e considere exportar o estado para reportá-lo.",
     "diagnostic": "diagnóstico: {{reason}}",
     "showDetails": "Mostrar detalhes",
     "exportGameState": "Exportar estado do jogo",
@@ -2374,7 +2374,7 @@
   "nonFatalPanic": {
     "heading": "Aviso do motor (não fatal)",
     "dismiss": "Dispensar",
-    "body": "phase.rs encontrou um aviso interno, mas se recuperou. O jogo ainda é seguro para continuar. Por favor, <report>reporte isso</report> para que possamos investigar.",
+    "body": "Pay the 1 pt1 encontrou um aviso interno, mas se recuperou. O jogo ainda é seguro para continuar. Por favor, <report>reporte isso</report> para que possamos investigar.",
     "dontShowAgain": "Não mostrar novamente nesta sessão",
     "reportTitle": "Pânico não fatal do motor: {{summary}}",
     "reportWhatHappened": "**O que aconteceu**\n_descreva brevemente o que você estava fazendo_\n\n**Diagnóstico**\n```\n{{diagnostic}}\n```"
@@ -2382,7 +2382,7 @@
   "stuckDecision": {
     "heading": "Game appears stuck",
     "dismiss": "Dismiss",
-    "body": "phase.rs is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
+    "body": "Pay the 1 pt1 is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
     "dontShowAgain": "Don’t show again this session",
     "reportTitle": "Stuck decision: {{kind}}",
     "reportWhatHappened": "**What happened**\n_briefly describe what you were doing_\n\n**Diagnostic**\n```\n{{diagnostic}}\n```"
@@ -2596,7 +2596,7 @@
   },
   "unhandledWaitingFor": {
     "title": "Ação necessária, mas a interface está ausente",
-    "body": "O jogo está aguardando uma ação sua, mas esta versão do phase.rs ainda não tem uma interface para isso. Isso é um bug — por favor, reporte para que possamos corrigir. Use o botão abaixo para sair do jogo.",
+    "body": "O jogo está aguardando uma ação sua, mas esta versão do Pay the 1 pt1 ainda não tem uma interface para isso. Isso é um bug — por favor, reporte para que possamos corrigir. Use o botão abaixo para sair do jogo.",
     "missingState": "Estado ausente",
     "copyDiagnostic": "Copiar diagnóstico",
     "copied": "Copiado!",

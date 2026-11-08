@@ -810,6 +810,7 @@ export const PermanentCard = memo(function PermanentCard({
       ref={cardRef}
       data-object-id={objectId}
       data-permanent-card={objectId}
+      data-rf-owner={obj.controller === playerId ? "me" : "opp"}
       data-grouped-ids={coveredIds && coveredIds.length > 1 ? coveredIds.join(" ") : undefined}
       data-card-hover
       layoutId={`permanent-${objectId}`}

@@ -430,7 +430,7 @@
     }
   },
   "savedDeckLibraryBusy": {
-    "description": "另一个 phase.rs 标签页正忙。请关闭其他 phase.rs 标签页后重试。",
+    "description": "另一个 Pay the 1 pt1 标签页正忙。请关闭其他 Pay the 1 pt1 标签页后重试。",
     "title": {
       "save": "无法保存套牌",
       "clone": "无法复制套牌",
@@ -444,7 +444,7 @@
     }
   },
   "savedDeckLibraryStorageFailure": {
-    "description": "phase.rs 无法访问浏览器存储。请稍后重试。"
+    "description": "Pay the 1 pt1 无法访问浏览器存储。请稍后重试。"
   },
   "savedDeckChanged": {
     "description": "此套牌在你的操作执行前发生了变化，因此未做任何更改。请检查该套牌并重试。"

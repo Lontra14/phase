@@ -25,6 +25,9 @@ import type {
   ViewerSnapshot,
   WaitingFor,
 } from "./types";
+import { takeP2PFirstPlayerHint } from "../progression/firstPlayerHint";
+/** Rogue Forge: no format-legality gate on the guest's deck (see validateGuestDeck). */
+const ROGUE_FORGE_FREE_DECKS: boolean = true;
 import type {
   InteractionPreview,
   InteractionPreviewRequest,
@@ -2990,6 +2993,9 @@ export class P2PHostAdapter implements EngineAdapter {
       if (!this.ownsAuthority()) return;
       if (this.gameStarted) return;
       if (this.pregameSeatState.seats[pid]?.type !== "JoinedHuman") return;
+      // Rogue Forge: friendly games between two players who agreed on their decks —
+      // format legality (banlists, card pools) is not enforced on the guest's deck.
+      if (ROGUE_FORGE_FREE_DECKS) return;
 
       try {
         // This is a SECURITY GATE, not a UI hint: a guest whose deck fails is
@@ -3205,12 +3211,14 @@ export class P2PHostAdapter implements EngineAdapter {
       const owner = createHostSessionOwner();
       this.wasmHostOwner = owner;
       try {
+        // Rogue Forge Starter: the loser of the previous game may pick who starts.
+        const firstPlayer = takeP2PFirstPlayerHint();
         transition = await this.applyBrowserMutation(() => this.wasm.initializeMultiplayerHostGame(
           deckPayload,
           formatConfigForInit,
           playerCount,
           this.matchConfig,
-          undefined,
+          firstPlayer,
           owner,
         ));
       } catch (err) {

@@ -327,7 +327,7 @@ async function runCheck(candidate: Lifecycle, probeScript: boolean): Promise<voi
     if (!isCurrent(candidate) || checkToken !== candidate.token || policyGeneration !== candidate.policyGeneration || getEffectiveOffline()) return;
     if (!(error instanceof DOMException && error.name === "AbortError")) {
       setUpdateError(`Service worker update check failed: ${formatError(error)}`);
-      console.warn("[phase.rs] Service worker update check failed.", error);
+      console.warn("[pt1] Service worker update check failed.", error);
     }
   } finally {
     if (isCurrent(candidate) && checkToken === candidate.token && policyGeneration === candidate.policyGeneration) candidate.probeAbort = null;

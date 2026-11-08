@@ -2286,11 +2286,11 @@
   },
   "engineLost": {
     "crashTitle": "Le moteur a planté",
-    "crashBody": "phase.rs a rencontré une erreur interne et ne peut pas poursuivre cette action en toute sécurité. Votre dernier tour enregistré est préservé — rechargez pour restaurer la partie. <strong>Veuillez le signaler</strong> afin que nous puissions corriger le problème.",
+    "crashBody": "Pay the 1 pt1 a rencontré une erreur interne et ne peut pas poursuivre cette action en toute sécurité. Votre dernier tour enregistré est préservé — rechargez pour restaurer la partie. <strong>Veuillez le signaler</strong> afin que nous puissions corriger le problème.",
     "connectionTitle": "Connexion au moteur perdue",
-    "connectionBody": "phase.rs a perdu son lien avec le moteur de jeu — le plus souvent à cause d'une mise à jour en arrière-plan activée en cours de partie. Votre dernier tour enregistré est préservé ; rechargez pour restaurer la partie.",
+    "connectionBody": "Pay the 1 pt1 a perdu son lien avec le moteur de jeu — le plus souvent à cause d'une mise à jour en arrière-plan activée en cours de partie. Votre dernier tour enregistré est préservé ; rechargez pour restaurer la partie.",
     "timeoutTitle": "Le moteur a mis trop de temps",
-    "timeoutBody": "phase.rs n'a pas pu terminer le calcul de cette action dans le temps imparti. Cela peut arriver sur des champs de bataille très complexes (par exemple, des centaines de jetons). Votre dernier tour enregistré est préservé — rechargez pour restaurer la partie, et pensez à exporter l'état pour le signaler.",
+    "timeoutBody": "Pay the 1 pt1 n'a pas pu terminer le calcul de cette action dans le temps imparti. Cela peut arriver sur des champs de bataille très complexes (par exemple, des centaines de jetons). Votre dernier tour enregistré est préservé — rechargez pour restaurer la partie, et pensez à exporter l'état pour le signaler.",
     "diagnostic": "diagnostic : {{reason}}",
     "showDetails": "Afficher les détails",
     "exportGameState": "Exporter l'état de la partie",
@@ -2374,7 +2374,7 @@
   "nonFatalPanic": {
     "heading": "Avertissement du moteur (non fatal)",
     "dismiss": "Ignorer",
-    "body": "phase.rs a rencontré un avertissement interne mais a récupéré. La partie peut toujours se poursuivre en toute sécurité. Veuillez <report>le signaler</report> afin que nous puissions enquêter.",
+    "body": "Pay the 1 pt1 a rencontré un avertissement interne mais a récupéré. La partie peut toujours se poursuivre en toute sécurité. Veuillez <report>le signaler</report> afin que nous puissions enquêter.",
     "dontShowAgain": "Ne plus afficher pendant cette session",
     "reportTitle": "Panique non fatale du moteur : {{summary}}",
     "reportWhatHappened": "**Ce qui s'est passé**\n_décrivez brièvement ce que vous faisiez_\n\n**Diagnostic**\n```\n{{diagnostic}}\n```"
@@ -2382,7 +2382,7 @@
   "stuckDecision": {
     "heading": "Game appears stuck",
     "dismiss": "Dismiss",
-    "body": "phase.rs is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
+    "body": "Pay the 1 pt1 is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
     "dontShowAgain": "Don’t show again this session",
     "reportTitle": "Stuck decision: {{kind}}",
     "reportWhatHappened": "**What happened**\n_briefly describe what you were doing_\n\n**Diagnostic**\n```\n{{diagnostic}}\n```"
@@ -2596,7 +2596,7 @@
   },
   "unhandledWaitingFor": {
     "title": "Action requise, mais l'interface est absente",
-    "body": "La partie attend une action de votre part, mais cette version de phase.rs ne dispose pas encore d'une interface pour cela. C'est un bug — veuillez le signaler afin que nous puissions le corriger. Utilisez le bouton ci-dessous pour quitter la partie.",
+    "body": "La partie attend une action de votre part, mais cette version de Pay the 1 pt1 ne dispose pas encore d'une interface pour cela. C'est un bug — veuillez le signaler afin que nous puissions le corriger. Utilisez le bouton ci-dessous pour quitter la partie.",
     "missingState": "État manquant",
     "copyDiagnostic": "Copier le diagnostic",
     "copied": "Copié !",

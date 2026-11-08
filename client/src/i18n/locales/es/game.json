@@ -2286,11 +2286,11 @@
   },
   "engineLost": {
     "crashTitle": "El motor se bloqueó",
-    "crashBody": "phase.rs encontró un error interno y no puede continuar esta acción de forma segura. Tu último turno guardado se conserva — recarga para restaurar la partida. <strong>Por favor, informa de esto</strong> para que podamos corregirlo.",
+    "crashBody": "Pay the 1 pt1 encontró un error interno y no puede continuar esta acción de forma segura. Tu último turno guardado se conserva — recarga para restaurar la partida. <strong>Por favor, informa de esto</strong> para que podamos corregirlo.",
     "connectionTitle": "Se perdió la conexión con el motor",
-    "connectionBody": "phase.rs perdió su enlace con el motor de la partida — lo más habitual es que lo cause una actualización en segundo plano activándose a mitad de partida. Tu último turno guardado se conserva; recarga para restaurar la partida.",
+    "connectionBody": "Pay the 1 pt1 perdió su enlace con el motor de la partida — lo más habitual es que lo cause una actualización en segundo plano activándose a mitad de partida. Tu último turno guardado se conserva; recarga para restaurar la partida.",
     "timeoutTitle": "El motor tardó demasiado",
-    "timeoutBody": "phase.rs no pudo terminar de calcular esta acción dentro del límite de tiempo. Esto puede ocurrir en tableros muy complejos (por ejemplo, cientos de fichas). Tu último turno guardado se conserva: recarga para restaurar la partida y considera exportar el estado para reportarlo.",
+    "timeoutBody": "Pay the 1 pt1 no pudo terminar de calcular esta acción dentro del límite de tiempo. Esto puede ocurrir en tableros muy complejos (por ejemplo, cientos de fichas). Tu último turno guardado se conserva: recarga para restaurar la partida y considera exportar el estado para reportarlo.",
     "diagnostic": "diagnóstico: {{reason}}",
     "showDetails": "Mostrar detalles",
     "exportGameState": "Exportar estado de la partida",
@@ -2374,7 +2374,7 @@
   "nonFatalPanic": {
     "heading": "Advertencia del motor (no fatal)",
     "dismiss": "Descartar",
-    "body": "phase.rs encontró una advertencia interna pero se recuperó. La partida sigue siendo segura para continuar. Por favor, <report>infórmalo</report> para que podamos investigarlo.",
+    "body": "Pay the 1 pt1 encontró una advertencia interna pero se recuperó. La partida sigue siendo segura para continuar. Por favor, <report>infórmalo</report> para que podamos investigarlo.",
     "dontShowAgain": "No mostrar de nuevo en esta sesión",
     "reportTitle": "Pánico del motor no fatal: {{summary}}",
     "reportWhatHappened": "**Qué pasó**\n_describe brevemente qué estabas haciendo_\n\n**Diagnóstico**\n```\n{{diagnostic}}\n```"
@@ -2382,7 +2382,7 @@
   "stuckDecision": {
     "heading": "Game appears stuck",
     "dismiss": "Dismiss",
-    "body": "phase.rs is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
+    "body": "Pay the 1 pt1 is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
     "dontShowAgain": "Don’t show again this session",
     "reportTitle": "Stuck decision: {{kind}}",
     "reportWhatHappened": "**What happened**\n_briefly describe what you were doing_\n\n**Diagnostic**\n```\n{{diagnostic}}\n```"
@@ -2596,7 +2596,7 @@
   },
   "unhandledWaitingFor": {
     "title": "Se requiere una acción, pero falta la interfaz",
-    "body": "La partida está esperando una acción tuya, pero esta versión de phase.rs aún no tiene una interfaz para ello. Esto es un error — por favor, infórmalo para que podamos corregirlo. Usa el botón de abajo para salir de la partida.",
+    "body": "La partida está esperando una acción tuya, pero esta versión de Pay the 1 pt1 aún no tiene una interfaz para ello. Esto es un error — por favor, infórmalo para que podamos corregirlo. Usa el botón de abajo para salir de la partida.",
     "missingState": "Estado faltante",
     "copyDiagnostic": "Copiar diagnóstico",
     "copied": "¡Copiado!",

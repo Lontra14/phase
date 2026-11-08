@@ -89,7 +89,7 @@ export function installTauriExternalLinkHandler(): void {
 
       event.preventDefault();
       void openWithOpener(destination.href).catch((err: unknown) => {
-        console.warn("[phase.rs] Failed to open external link via Tauri opener.", err);
+        console.warn("[pt1] Failed to open external link via Tauri opener.", err);
       });
     },
     { capture: true },

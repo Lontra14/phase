@@ -12,6 +12,9 @@ import type {
   ThemeTrack,
 } from "./types";
 
+/** Rogue Forge: the background music (and its stingers) never plays. */
+const ROGUE_FORGE_NO_MUSIC: boolean = true;
+
 /** Fisher-Yates shuffle (in-place). */
 function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -415,6 +418,7 @@ class AudioManager {
    * Falls back to stopMusic(2.0) if the theme has no stinger tracks.
    */
   playStinger(context: "victory" | "defeat"): void {
+    if (ROGUE_FORGE_NO_MUSIC) return; // Rogue Forge: sound effects only, no background music
     const tracks = this.activeTheme.musicByContext[context];
     if (tracks.length === 0) {
       this.stopMusic(2.0);
@@ -464,6 +468,7 @@ class AudioManager {
 
   /** Start music playback with shuffled track rotation for the active context. */
   startMusic(): void {
+    if (ROGUE_FORGE_NO_MUSIC) return; // Rogue Forge: sound effects only, no background music
     if (this.disabled || !this.ctx || !this.musicGain) return;
 
     const prefs = usePreferencesStore.getState();
@@ -491,6 +496,7 @@ class AudioManager {
 
   /** Start music with a fade-in from silence. */
   fadeInMusic(duration = 1.5): void {
+    if (ROGUE_FORGE_NO_MUSIC) return; // Rogue Forge: sound effects only, no background music
     if (!this.ctx || !this.musicGain) return;
 
     const prefs = usePreferencesStore.getState();
@@ -700,6 +706,7 @@ class AudioManager {
   }
 
   private playTrack(): void {
+    if (ROGUE_FORGE_NO_MUSIC) return; // Rogue Forge: sound effects only, no background music
     if (this.disabled || !this.ctx || !this.musicGain) return;
 
     const track = this.trackOrder[this.trackIndex];

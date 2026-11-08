@@ -1,12 +1,14 @@
 import { lazy, StrictMode, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
-import { BrowserRouter, Routes, Route, useSearchParams } from "react-router";
+import { BrowserRouter, Navigate, Routes, Route, useLocation, useSearchParams } from "react-router";
 
-import { AppShell } from "./components/chrome/AppShell";
 import { AppToast } from "./components/chrome/AppToast";
 import { NativeEngineProgressOverlay } from "./components/chrome/NativeEngineProgressOverlay";
 import { RouteTelemetry } from "./components/chrome/RouteTelemetry";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { HostControlTile } from "./components/chrome/HostControlTile";
+import { ProgressionResultWatcher } from "./progression/ProgressionResultWatcher";
+import { SettingsFab } from "./progression/SettingsFab";
+import { pendingMatchRoute } from "./progression/run";
 import { EngineLostModal } from "./components/modal/EngineLostModal";
 import { NonFatalPanicToast } from "./components/modal/NonFatalPanicToast";
 import { StuckDecisionToast } from "./components/modal/StuckDecisionToast";
@@ -20,32 +22,43 @@ import { ensurePreload, subscribePreload } from "./startup/preloadAssets";
 import { useCardDataStore } from "./stores/cardDataStore";
 import { useCloudSyncStore } from "./stores/cloudSyncStore";
 import { useEffectiveOffline } from "./stores/connectivityStore";
-import { MenuPage } from "./pages/MenuPage";
 
 const GamePage = lazy(() =>
   import("./pages/GamePage").then((m) => ({ default: m.GamePage })),
 );
-const GameSetupPage = lazy(() =>
-  import("./pages/GameSetupPage").then((m) => ({ default: m.GameSetupPage })),
-);
-const MultiplayerPage = lazy(() => import("./pages/MultiplayerPage").then((m) => ({ default: m.MultiplayerPage })));
-const DeckBuilderPage = lazy(() => import("./pages/DeckBuilderPage").then((m) => ({ default: m.DeckBuilderPage })));
-const MyDecksPage = lazy(() => import("./pages/MyDecksPage").then((m) => ({ default: m.MyDecksPage })));
-const CoveragePage = lazy(() => import("./pages/CoveragePage").then((m) => ({ default: m.CoveragePage })));
-const DraftLandingPage = lazy(() => import("./pages/DraftLandingPage").then((m) => ({ default: m.DraftLandingPage })));
-const DraftPage = lazy(() => import("./pages/DraftPage").then((m) => ({ default: m.DraftPage })));
-const DraftPodPage = lazy(() => import("./pages/DraftPodPage").then((m) => ({ default: m.DraftPodPage })));
-const DraftSpectatorPage = lazy(() =>
-  import("./pages/DraftSpectatorPage").then((m) => ({ default: m.DraftSpectatorPage })),
-);
+const MatchLabPage = lazy(() => import("./pages/MatchLabPage").then((m) => ({ default: m.MatchLabPage })));
 const ReplayPage = lazy(() => import("./pages/ReplayPage").then((m) => ({ default: m.ReplayPage })));
-const OpenDesktopPage = lazy(() => import("./pages/OpenDesktopPage").then((m) => ({ default: m.OpenDesktopPage })));
-const TournamentLandingPage = lazy(() => import("./pages/TournamentLandingPage").then((m) => ({ default: m.TournamentLandingPage })));
-const TournamentPage = lazy(() => import("./pages/TournamentPage").then((m) => ({ default: m.TournamentPage })));
+const HomePage = lazy(() => import("./pages/HomePage").then((m) => ({ default: m.HomePage })));
+const ProgressionPage = lazy(() => import("./pages/ProgressionPage").then((m) => ({ default: m.ProgressionPage })));
+const StarterPage = lazy(() => import("./pages/StarterPage").then((m) => ({ default: m.StarterPage })));
+const ChessPage = lazy(() => import("./pages/ChessPage").then((m) => ({ default: m.ChessPage })));
 
 function DevStrict({ children }: { children: ReactNode }) {
   if (!import.meta.env.DEV) return children;
   return <StrictMode>{children}</StrictMode>;
+}
+
+/** Old /lab links (and roguelike deep links) keep their #you=…&opp=… hash. */
+function LabRedirect() {
+  const location = useLocation();
+  return <Navigate to={{ pathname: "/test", hash: location.hash }} replace />;
+}
+
+/**
+ * The match screen sends players to /setup or /multiplayer when something goes
+ * wrong (deck rejected, setup error). Route them back to the mode they came from.
+ */
+function BackFromGame() {
+  const location = useLocation();
+  const route = pendingMatchRoute();
+  if (route) {
+    return <Navigate to={route} replace state={location.state} />;
+  }
+  return (
+    <DevStrict>
+      <MatchLabPage />
+    </DevStrict>
+  );
 }
 
 function GameRouteElement() {
@@ -131,29 +144,27 @@ function AppContent() {
       <ErrorBoundary>
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-500 border-t-white" /></div>}>
         <Routes>
-          {/* Modern app shell (rail + tab bar + single scene) wraps every
-              out-of-match surface; /game/:id stays full-screen outside it. */}
-          <Route element={<AppShell />}>
-            <Route path="/" element={<DevStrict><MenuPage /></DevStrict>} />
-            <Route path="/setup" element={<DevStrict><GameSetupPage /></DevStrict>} />
-            <Route path="/multiplayer" element={<DevStrict><MultiplayerPage /></DevStrict>} />
-            <Route path="/my-decks" element={<DevStrict><MyDecksPage /></DevStrict>} />
-            <Route path="/deck-builder" element={<DevStrict><DeckBuilderPage /></DevStrict>} />
-            <Route path="/coverage" element={<DevStrict><CoveragePage /></DevStrict>} />
-            <Route path="/draft" element={<DevStrict><DraftLandingPage /></DevStrict>} />
-            <Route path="/draft/quick" element={<DevStrict><DraftPage /></DevStrict>} />
-            <Route path="/tournament" element={<DevStrict><TournamentLandingPage /></DevStrict>} />
-            <Route path="/tournament/:code" element={<DevStrict><TournamentPage /></DevStrict>} />
-            <Route path="/draft-pod" element={<DraftPodPage />} />
-            <Route path="/draft-spectator" element={<DraftSpectatorPage />} />
-          </Route>
+          {/* Rogue Forge build: mode select, Test match (MatchLab), Progression,
+              Starter and the match itself. Every other phase.rs page is removed; routes
+              the game still navigates to (setup, multiplayer) go back to the
+              mode the player came from, which shows the reason. */}
+          <Route path="/" element={<DevStrict><HomePage /></DevStrict>} />
+          <Route path="/test" element={<DevStrict><MatchLabPage /></DevStrict>} />
+          <Route path="/progression" element={<DevStrict><ProgressionPage /></DevStrict>} />
+          <Route path="/starter" element={<DevStrict><StarterPage /></DevStrict>} />
+          <Route path="/chess" element={<DevStrict><ChessPage /></DevStrict>} />
+          <Route path="/lab" element={<LabRedirect />} />
+          <Route path="/setup" element={<BackFromGame />} />
+          <Route path="/multiplayer" element={<BackFromGame />} />
           <Route path="/game/:id" element={<GameRouteElement />} />
           <Route path="/replay" element={<ReplayPage />} />
-          <Route path="/open-desktop" element={<OpenDesktopPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
       </ErrorBoundary>
       <HostControlTile />
+      <ProgressionResultWatcher />
+      <SettingsFab />
       <AppToast />
       <NativeEngineProgressOverlay />
       <EngineLostModal />

@@ -73,7 +73,7 @@ describe("FullscreenButton Tauri synchronization", () => {
 
     await act(async () => { onResize?.(); });
     expect(warn).toHaveBeenCalledWith(
-      "[phase.rs] Could not synchronize Tauri fullscreen state.",
+      "[pt1] Could not synchronize Tauri fullscreen state.",
       expect.any(Error),
     );
   });

@@ -2286,11 +2286,11 @@
   },
   "engineLost": {
     "crashTitle": "Engine abgestürzt",
-    "crashBody": "phase.rs ist auf einen internen Fehler gestoßen und kann diese Aktion nicht sicher fortsetzen. Dein zuletzt gespeicherter Zug bleibt erhalten — lade neu, um das Spiel wiederherzustellen. <strong>Bitte melde dies</strong>, damit wir es beheben können.",
+    "crashBody": "Pay the 1 pt1 ist auf einen internen Fehler gestoßen und kann diese Aktion nicht sicher fortsetzen. Dein zuletzt gespeicherter Zug bleibt erhalten — lade neu, um das Spiel wiederherzustellen. <strong>Bitte melde dies</strong>, damit wir es beheben können.",
     "connectionTitle": "Engine-Verbindung verloren",
-    "connectionBody": "phase.rs hat die Verbindung zur Spiel-Engine verloren — meist durch ein Hintergrund-Update verursacht, das mitten im Spiel aktiviert wurde. Dein zuletzt gespeicherter Zug bleibt erhalten; lade neu, um das Spiel wiederherzustellen.",
+    "connectionBody": "Pay the 1 pt1 hat die Verbindung zur Spiel-Engine verloren — meist durch ein Hintergrund-Update verursacht, das mitten im Spiel aktiviert wurde. Dein zuletzt gespeicherter Zug bleibt erhalten; lade neu, um das Spiel wiederherzustellen.",
     "timeoutTitle": "Engine hat zu lange gebraucht",
-    "timeoutBody": "phase.rs konnte diese Aktion nicht innerhalb des Zeitlimits berechnen. Das kann bei sehr komplexen Spielfeldern passieren (zum Beispiel Hunderte von Spielsteinen). Dein zuletzt gespeicherter Zug bleibt erhalten — lade neu, um das Spiel wiederherzustellen, und exportiere ggf. den Spielstand, um ihn zu melden.",
+    "timeoutBody": "Pay the 1 pt1 konnte diese Aktion nicht innerhalb des Zeitlimits berechnen. Das kann bei sehr komplexen Spielfeldern passieren (zum Beispiel Hunderte von Spielsteinen). Dein zuletzt gespeicherter Zug bleibt erhalten — lade neu, um das Spiel wiederherzustellen, und exportiere ggf. den Spielstand, um ihn zu melden.",
     "diagnostic": "Diagnose: {{reason}}",
     "showDetails": "Details anzeigen",
     "exportGameState": "Spielzustand exportieren",
@@ -2374,7 +2374,7 @@
   "nonFatalPanic": {
     "heading": "Engine-Warnung (nicht fatal)",
     "dismiss": "Schließen",
-    "body": "phase.rs ist auf eine interne Warnung gestoßen, hat sich aber erholt. Das Spiel kann sicher fortgesetzt werden. Bitte <report>melde es</report>, damit wir untersuchen können.",
+    "body": "Pay the 1 pt1 ist auf eine interne Warnung gestoßen, hat sich aber erholt. Das Spiel kann sicher fortgesetzt werden. Bitte <report>melde es</report>, damit wir untersuchen können.",
     "dontShowAgain": "Diese Sitzung nicht mehr anzeigen",
     "reportTitle": "Nicht fataler Engine-Panic: {{summary}}",
     "reportWhatHappened": "**Was ist passiert**\n_beschreibe kurz, was du gerade getan hast_\n\n**Diagnose**\n```\n{{diagnostic}}\n```"
@@ -2382,7 +2382,7 @@
   "stuckDecision": {
     "heading": "Game appears stuck",
     "dismiss": "Dismiss",
-    "body": "phase.rs is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
+    "body": "Pay the 1 pt1 is waiting on a decision that has no available action, so the game can’t continue. This is a bug. Please <report>report it</report> so we can investigate.",
     "dontShowAgain": "Don’t show again this session",
     "reportTitle": "Stuck decision: {{kind}}",
     "reportWhatHappened": "**What happened**\n_briefly describe what you were doing_\n\n**Diagnostic**\n```\n{{diagnostic}}\n```"
@@ -2596,7 +2596,7 @@
   },
   "unhandledWaitingFor": {
     "title": "Aktion erforderlich, aber UI fehlt",
-    "body": "Das Spiel wartet auf eine Aktion von dir, aber diese Version von phase.rs hat dafür noch keine UI. Dies ist ein Fehler — bitte melde ihn, damit wir ihn beheben können. Nutze die Schaltfläche unten, um das Spiel zu verlassen.",
+    "body": "Das Spiel wartet auf eine Aktion von dir, aber diese Version von Pay the 1 pt1 hat dafür noch keine UI. Dies ist ein Fehler — bitte melde ihn, damit wir ihn beheben können. Nutze die Schaltfläche unten, um das Spiel zu verlassen.",
     "missingState": "Fehlender Zustand",
     "copyDiagnostic": "Diagnose kopieren",
     "copied": "Kopiert!",
