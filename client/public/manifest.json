@@ -1,7 +1,7 @@
 {
-  "name": "phase.rs",
-  "short_name": "phase.rs",
-  "description": "Magic: The Gathering Engine",
+  "name": "Pay the 1 pt1",
+  "short_name": "pt1",
+  "description": "Pay the 1 pt1 \u2014 Magic: The Gathering with friends",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#030712",
