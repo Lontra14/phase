@@ -166,11 +166,13 @@ export function starterFormat(run: StarterRun): "Commander" | "Limited" {
   return run.players.every((p) => p.commander?.length) ? "Commander" : "Limited";
 }
 
-/** The engine rules of a Starter game (team tables: Two-Headed Giant, with commanders: its Commander version). */
-export function starterTableFormat(run: StarterRun): "Commander" | "Limited" | "TwoHeadedGiant" | "TwoHeadedGiantCommander" {
-  const f = starterFormat(run);
-  if (!starterTeams(run)) return f;
-  return f === "Commander" ? "TwoHeadedGiantCommander" : "TwoHeadedGiant";
+/**
+ * The engine rules of a Starter game. Team tables play a free-for-all game too
+ * (seats 1+2 against 3+4, the team of the last player standing wins): phase.rs's
+ * Two-Headed Giant freezes online and its AI cannot play in a team.
+ */
+export function starterTableFormat(run: StarterRun): "Commander" | "Limited" {
+  return starterFormat(run);
 }
 
 export function createStarter(

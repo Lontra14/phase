@@ -21,8 +21,9 @@ The match itself is the stock phase.rs board, rules engine and AI.
 A run through Magic's history. Settings: the boosters **by years** (start year, end year, years per block 1–5) or
 **chosen by set** (how many blocks = series, and for each block its own sets — one or more, from every booster set
 of the index, searchable and paged), packs per sealed, games per block (**best of 1, 3 or 5**), and the table: **2 to 4 players**, vs AI or vs
-friends online (each seat a friend or an AI; at 4, **free for all** or **teams 2 vs 2** = Two-Headed Giant, seats
-1+2 against 3+4 — four friends: phase.rs's AI cannot play in a team, and upstream drops AI seats from team games).
+friends online (each seat a friend or an AI; at 4, **free for all** or **teams 2 vs 2**: seats 1+2 against 3+4 in
+a free-for-all game, the team of the last player standing wins the block — phase.rs's Two-Headed Giant stalls online
+at the opening hands and its AI cannot play a shared team turn).
 
 Each block:
 
@@ -222,3 +223,16 @@ modes (room for online games, rules switch, the same list reading); its deep lin
   planar die and upstream drops AI seats from Planechase games.
 - Engine patch (`crates/engine/src/game/deck_validation.rs`): no deck size, copy limit or banned list for Archenemy,
   Planechase, their Commander versions and Two-Headed Giant Commander (the scheme / planar decks keep their rules).
+
+## Opponents' arenas, saved card backs
+
+- Card backs and basic land arts per opponent at tables of 3-4: the room carries each player's cosmetics; the game
+  maps them to seats by player name (`ProgressionResultWatcher.tsx` → `window.__rfOppSeats`), and the patch reads the
+  seat of each card (`data-rf-seat`, or the seat pane). The AIs each get a different preset back.
+- Two-Headed Giant (and its Commander version) is hidden in the Test match: in this build it stalls online at the
+  opening hands.
+- Card backs: your own backs (drawn or loaded from an image) are kept in a gallery (`rogue-forge-saved-backs`, up to
+  30) and you switch between them; each can be edited or deleted.
+- Archenemy vs AI: 1 on 1 only — the heroes take one shared turn, which phase.rs's AI cannot play.
+- Starter commander precons: older MTGJSON Commander decks have no "commander" section (it is in `displayCommander` or
+  in the main deck): the generator now finds it, and keeps decks with a card missing its Scryfall id.

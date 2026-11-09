@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
-import { BACK_PRESETS, type CardBackChoice, backUrlOf, loadCosmetics, saveCosmetics } from "./cosmetics";
+import { BACK_PRESETS, type CardBackChoice, type SavedBack, backUrlOf, loadCosmetics, loadSavedBacks, saveCosmetics, saveSavedBacks } from "./cosmetics";
 
 /** Small button that opens the card back picker; shows the current back. */
 export function CardBackButton({ label = "Card back" }: { label?: string }) {
@@ -24,11 +24,19 @@ export function CardBackButton({ label = "Card back" }: { label?: string }) {
 
 export function CardBackPicker({ onClose }: { onClose: () => void }) {
   const [choice, setChoice] = useState<CardBackChoice>(() => loadCosmetics().back);
-  const [drawing, setDrawing] = useState(false);
+  // null = not drawing; "new" = a new back; otherwise the id of the saved back being edited.
+  const [drawing, setDrawing] = useState<string | null>(null);
+  const [saved, setSaved] = useState<SavedBack[]>(() => loadSavedBacks());
+  const [full, setFull] = useState(false);
   const pick = (c: CardBackChoice) => {
     setChoice(c);
     saveCosmetics({ back: c });
   };
+  const keep = (list: SavedBack[]) => {
+    setSaved(list);
+    setFull(!saveSavedBacks(list));
+  };
+  const editing = drawing && drawing !== "new" ? saved.find((b) => b.id === drawing) : undefined;
   return (
     <div className="pf-modal" onClick={onClose}>
       <div className="pf-sheet pf-backsheet" onClick={(e) => e.stopPropagation()}>
@@ -38,18 +46,22 @@ export function CardBackPicker({ onClose }: { onClose: () => void }) {
             Done
           </button>
         </div>
+        {full && <p className="pf-error">The browser's storage is full: delete a few saved backs to keep new ones.</p>}
         <p className="pf-hint">
-          Used on your cards in every mode and in the Chess minigame. You see your back on your cards and your opponent's back on
+          Your own backs stay saved here: draw them or load an image, as many as you like, and switch between them. Used on your cards in every mode and in the Chess minigame. You see your back on your cards and your opponent's back on
           theirs (online, the two choices are swapped at the start of the game). The same goes for the basic land arts chosen in the
           deck builder.
         </p>
         {drawing ? (
           <BackPainter
-            start={choice.id === "custom" ? choice.img : undefined}
-            onCancel={() => setDrawing(false)}
+            start={editing?.img}
+            onCancel={() => setDrawing(null)}
             onSave={(img) => {
+              // A new drawing joins the gallery; an edited one replaces itself.
+              if (editing) keep(saved.map((b) => (b.id === editing.id ? { ...b, img } : b)));
+              else keep([{ id: `b${Date.now().toString(36)}`, img }, ...saved]);
               pick({ id: "custom", img });
-              setDrawing(false);
+              setDrawing(null);
             }}
           />
         ) : (
@@ -60,19 +72,84 @@ export function CardBackPicker({ onClose }: { onClose: () => void }) {
                 <span>{p.name}</span>
               </button>
             ))}
-            <button type="button" className={`pf-backtile ${choice.id === "custom" ? "on" : ""}`} onClick={() => (choice.id === "custom" ? pick(choice) : setDrawing(true))}>
-              {choice.id === "custom" && choice.img ? <img src={choice.img} alt="" /> : <div className="pf-backtile-blank">✎</div>}
-              <span>Your own</span>
-            </button>
-            <button type="button" className="pf-backtile pf-backtile-draw" onClick={() => setDrawing(true)}>
+            {saved.map((b, i) => (
+              <div key={b.id} className={`pf-backtile pf-backtile-saved ${choice.id === "custom" && choice.img === b.img ? "on" : ""}`}>
+                <button type="button" className="pick" onClick={() => pick({ id: "custom", img: b.img })}>
+                  <img src={b.img} alt="" />
+                  <span>Yours {saved.length - i}</span>
+                </button>
+                <div className="tools">
+                  <button type="button" title="Edit" onClick={() => setDrawing(b.id)}>
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    title="Delete"
+                    onClick={() => {
+                      if (!window.confirm("Delete this card back?")) return;
+                      keep(saved.filter((x) => x.id !== b.id));
+                      if (choice.id === "custom" && choice.img === b.img) pick({ id: "classic" });
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button type="button" className="pf-backtile pf-backtile-draw" onClick={() => setDrawing("new")}>
               <div className="pf-backtile-blank">🖌</div>
-              <span>{choice.id === "custom" ? "Edit drawing" : "Draw one"}</span>
+              <span>Draw a new back</span>
             </button>
+            <label className="pf-backtile pf-backtile-draw">
+              <div className="pf-backtile-blank">🖼</div>
+              <span>Load an image</span>
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  void imageToBack(file).then((img) => {
+                    if (!img) return;
+                    keep([{ id: `b${Date.now().toString(36)}`, img }, ...saved]);
+                    pick({ id: "custom", img });
+                  });
+                }}
+              />
+            </label>
           </div>
         )}
       </div>
     </div>
   );
+}
+
+/** A picture from the device as a card back: cropped to the card's shape, small JPEG. */
+function imageToBack(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = 244;
+      c.height = 340;
+      const ctx = c.getContext("2d");
+      if (!ctx) return resolve(null);
+      const scale = Math.max(c.width / im.width, c.height / im.height);
+      const w = im.width * scale;
+      const h = im.height * scale;
+      ctx.drawImage(im, (c.width - w) / 2, (c.height - h) / 2, w, h);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL("image/jpeg", 0.82));
+    };
+    im.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    im.src = url;
+  });
 }
 
 const W = 244;

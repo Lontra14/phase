@@ -21,6 +21,7 @@ import type { PlayerState, RunState } from "./run";
 import { mainNames, sideboardNames } from "./run";
 import { opponentCollection } from "./flow";
 import { setP2PFirstPlayerHint } from "./firstPlayerHint";
+import type { SharedCosmetics } from "./cosmetics";
 
 export const PROG_YOU_DECK = "Progression · You";
 export const PROG_AI_DECK = "Progression · AI";
@@ -163,6 +164,27 @@ export interface MatchSpec {
   aiSeats?: TableSeat[];
   /** The name of every seat of the game (index = engine seat), shown in the game instead of phase.rs's random names. */
   tableNames?: string[];
+  /** Online tables: each player's card back and lands, by player name (each opponent shows their own). */
+  tableCos?: Record<string, SharedCosmetics | undefined>;
+}
+
+/** Each player's cosmetics, by name, for the next online game (see ProgressionResultWatcher). */
+export const TABLE_COS_KEY = "pt1-table-cos";
+
+function rememberTableCos(cos: MatchSpec["tableCos"]): void {
+  try {
+    if (cos && Object.keys(cos).length) localStorage.setItem(TABLE_COS_KEY, JSON.stringify({ cos, at: Date.now() }));
+    else localStorage.removeItem(TABLE_COS_KEY);
+  } catch {
+    // cosmetic only
+  }
+}
+
+/** Every player of the room with the cosmetics they sent, by name. */
+export function roomCosmetics(players: { name: string; cos?: SharedCosmetics }[]): Record<string, SharedCosmetics | undefined> {
+  const out: Record<string, SharedCosmetics | undefined> = {};
+  for (const p of players) if (p.cos) out[p.name] = p.cos;
+  return out;
 }
 
 /** Where the names of the next game's players wait for the game to start (see ProgressionResultWatcher). */
@@ -276,6 +298,7 @@ export async function launchAiMatchSpec(spec: MatchSpec, data: ProgData, gameId:
   const config = matchConfig({ ...spec, players: ais.length + 1 });
   // The AIs sit at seats 1.. in this order.
   rememberTableNames(spec.tableNames ?? [spec.me.name, ...ais.map((a) => a.player.name)], gameId);
+  rememberTableCos(undefined);
   if (!canAttemptNativeEngine(prefs.nativeEngineEnabled) || spec.first) {
     saveActiveGame({ id: gameId, mode: "ai", difficulty, aiSeats, formatConfig: config });
   }
@@ -297,6 +320,7 @@ export async function hostFriendMatchSpec(spec: MatchSpec, data: ProgData): Prom
   setP2PFirstPlayerHint(spec.hostFirst ?? null);
   setMyName(spec.me.name);
   rememberTableNames(spec.tableNames, "*");
+  rememberTableCos(spec.tableCos);
   const mp = useMultiplayerStore.getState();
   const settings: HostingSettings = {
     displayName: spec.me.name || mp.displayName || "Host",
@@ -328,6 +352,7 @@ export async function joinFriendMatchSpec(spec: MatchSpec, data: ProgData, code:
   localStorage.setItem(ACTIVE_DECK_KEY, youDeck);
   setMyName(spec.me.name);
   rememberTableNames(spec.tableNames, "*");
+  rememberTableCos(spec.tableCos);
   useGameStore.setState({ gameId });
   navigate(`/game/${gameId}?mode=p2p-join&code=${code}`);
 }
@@ -346,8 +371,9 @@ async function progressionSpec(run: RunState, data: ProgData): Promise<MatchSpec
     matchType: "Bo1",
     players: run.players.length,
     tableNames: run.players.map((p) => p.name),
-    // Teams of two (seats 1+2 against 3+4): Two-Headed Giant.
-    ...(run.teams && run.players.length === 4 ? { format: "TwoHeadedGiant" as const } : {}),
+    // Teams of two (seats 1+2 against 3+4) play a free-for-all game: the team of the
+    // last player standing takes it (phase.rs's Two-Headed Giant freezes online and its
+    // AI cannot play in a team).
     // The AI seats are played on the host's device (or in the game vs AI), each at its own seat.
     aiSeats: run.mode === "ai" || run.me === 0 ? ais.map((x) => ({ player: x.p, difficulty: run.difficulty, seatIndex: x.i })) : [],
   };
@@ -357,10 +383,10 @@ export async function launchAiMatch(run: RunState, data: ProgData, gameId: strin
   await launchAiMatchSpec(await progressionSpec(run, data), data, gameId, navigate);
 }
 
-export async function hostFriendMatch(run: RunState, data: ProgData): Promise<boolean> {
-  return hostFriendMatchSpec(await progressionSpec(run, data), data);
+export async function hostFriendMatch(run: RunState, data: ProgData, extra?: Partial<MatchSpec>): Promise<boolean> {
+  return hostFriendMatchSpec({ ...(await progressionSpec(run, data)), ...extra }, data);
 }
 
-export async function joinFriendMatch(run: RunState, data: ProgData, code: string, gameId: string, navigate: Navigate): Promise<void> {
-  await joinFriendMatchSpec(await progressionSpec(run, data), data, code, gameId, navigate);
+export async function joinFriendMatch(run: RunState, data: ProgData, code: string, gameId: string, navigate: Navigate, extra?: Partial<MatchSpec>): Promise<void> {
+  await joinFriendMatchSpec({ ...(await progressionSpec(run, data)), ...extra }, data, code, gameId, navigate);
 }

@@ -44,12 +44,40 @@ const BASIC_RE = /^(Snow-Covered )?(Plains|Island|Swamp|Mountain|Forest|Wastes)$
 // Legendary creatures (and Backgrounds) only: the rules engine refuses any other commander.
 const isCommanderType = (type: string) => (/Legendary/.test(type.split("//")[0]) && /Creature/.test(type.split("//")[0])) || /\bBackground\b/.test(type);
 const PARTNER_KINDS = ["Partner", "PartnerWith", "FriendsForever", "ChooseABackground", "DoctorsCompanion", "CharacterSelect"];
-const kwName = (k: unknown): string => (typeof k === "string" ? k : k && typeof k === "object" ? Object.keys(k as object)[0] ?? "" : "");
+/**
+ * The partner kind of a card from the engine's keywords. The engine sends
+ * `{ Partner: { type: "Generic" | "With" | "FriendsForever" | "CharacterSelect" |
+ * "DoctorsCompanion" | "ChooseABackground", data? } }` (older data: bare names).
+ */
+function partnerOf(keywords: unknown[]): { kind: string | null; withName?: string } {
+  for (const k of keywords) {
+    if (typeof k === "string") {
+      if (PARTNER_KINDS.includes(k)) return { kind: k };
+      continue;
+    }
+    if (!k || typeof k !== "object") continue;
+    const [key, value] = Object.entries(k as Record<string, unknown>)[0] ?? [];
+    if (key === "Partner") {
+      const v = value as { type?: string; data?: unknown } | string | null | undefined;
+      const type = typeof v === "string" ? v : v?.type;
+      if (!type || type === "Generic") return { kind: "Partner" };
+      if (type === "With") return { kind: "PartnerWith", withName: typeof (v as { data?: unknown })?.data === "string" ? ((v as { data: string }).data) : undefined };
+      return { kind: type };
+    }
+    if (key && PARTNER_KINDS.includes(key)) return { kind: key };
+  }
+  return { kind: null };
+}
 
+const isDoctor = (type: string) => /\bDoctor\b/.test(type.split("//")[0]);
 interface CommanderInfo {
   ok: boolean;
   background: boolean;
   kind: string | null;
+  /** "Partner with [name]": the one card it pairs with. */
+  withName?: string;
+  /** A Doctor (Time Lord Doctor): Doctor's companions pair with it. */
+  doctor: boolean;
   type: string;
 }
 /**
@@ -58,31 +86,36 @@ interface CommanderInfo {
  * commander"…), and how it can pair (partner, background, friends forever…).
  */
 async function commanderInfo(name: string, type: string): Promise<CommanderInfo> {
-  type EngineFace = { is_commander?: boolean; keywords?: unknown[] } | null;
+  type EngineFace = { is_commander?: boolean; keywords?: unknown[]; card_type?: { subtypes?: string[] } } | null;
   let face: EngineFace = null;
   try {
     face = (await getCardFaceData(name)) as EngineFace;
   } catch {
     face = null;
   }
-  const kws = (face?.keywords ?? []).map(kwName);
+  const partner = partnerOf(face?.keywords ?? []);
   const background = /\bBackground\b/.test(type) && !/Creature/.test(type.split("//")[0]);
   // The engine sends `is_commander` only when true; legendary creatures always qualify.
   const ok = face?.is_commander === true || (isCommanderType(type) && !background);
-  return { ok, background, kind: PARTNER_KINDS.find((k) => kws.includes(k)) ?? null, type };
+  // The subtypes from the engine's own card data (the index may not hold the card).
+  const doctor = (face?.card_type?.subtypes ?? []).some((t) => t.toLowerCase() === "doctor") || isDoctor(type);
+  return { ok, background, kind: partner.kind, withName: partner.withName, doctor, type };
 }
 
-/** The cards that can be the second commander next to `first`. */
+const sameName = (a: string | undefined, b: string) => !!a && a.toLowerCase().split(" // ")[0] === b.toLowerCase().split(" // ")[0];
+
+/** The cards that can be the second commander next to `first` (CR 702.124: partner, partner with, friends forever, Doctor's companion, Choose a Background…). */
 function partnersOf(first: CommanderInfo, all: Map<string, CommanderInfo>, self: string): string[] {
   const out: string[] = [];
   for (const [n, c] of all) {
-    if (n === self || !c.ok) continue;
+    if (n === self || (!c.ok && !c.background)) continue;
     const fits =
       (first.kind === "ChooseABackground" && c.background) ||
       (first.background && c.kind === "ChooseABackground") ||
-      (!c.background && first.kind !== null && first.kind !== "ChooseABackground" && first.kind !== "DoctorsCompanion" && c.kind === first.kind) ||
-      (first.kind === "DoctorsCompanion" && /\bDoctor\b/.test(c.type)) ||
-      (/\bDoctor\b/.test(first.type) && c.kind === "DoctorsCompanion");
+      (first.kind === "PartnerWith" && c.kind === "PartnerWith" && (sameName(first.withName, n) || sameName(c.withName, self))) ||
+      (!c.background && first.kind !== null && ["Partner", "FriendsForever", "CharacterSelect"].includes(first.kind) && c.kind === first.kind) ||
+      (first.kind === "DoctorsCompanion" && c.doctor) ||
+      (first.doctor && c.kind === "DoctorsCompanion");
     if (fits) out.push(n);
   }
   return out;

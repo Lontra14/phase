@@ -25,7 +25,7 @@ import { WheelOfFortune } from "../progression/WheelOfFortune";
 import type { ProgData, ProgPrint } from "../progression/data";
 import { RARITY_LABEL, loadProgressionData, printImage, resolveSupport } from "../progression/data";
 import type { MatchSpec } from "../progression/launch";
-import { deckSize, hostFriendMatchSpec, joinFriendMatchSpec, launchAiMatchSpec } from "../progression/launch";
+import { deckSize, hostFriendMatchSpec, joinFriendMatchSpec, launchAiMatchSpec, roomCosmetics } from "../progression/launch";
 import type { Pack } from "../progression/packs";
 import { PRODUCT_LABEL } from "../progression/packs";
 import type { Basics, PlayerState, Slot } from "../progression/run";
@@ -489,13 +489,13 @@ function StarterSetup({
   const hostName = room.players.find((p) => p.id === "host")?.name?.trim() || "Host";
   const linked = room.status === "connected";
   const players = guestWaiting ? 1 : s.players;
-  // Teams need four people: phase.rs's AI cannot play as part of a team.
-  const teams = s.players === 4 && s.teams && s.mode === "friend";
+  // Teams: seats 1+2 against 3+4 in a free-for-all game.
+  const teams = s.players === 4 && s.teams;
   // Seat kinds: 0 = me; then AI, a friend in the room, or (no room) a friend whose deck I pick.
   const kindAt = (i: number): "me" | "ai" | "friend" | "local" => {
     if (i === 0) return "me";
     if (s.mode === "ai") return "ai";
-    const k = teams ? "friend" : s.seatKinds[i - 1] ?? "friend";
+    const k = s.seatKinds[i - 1] ?? "friend";
     return k === "ai" ? "ai" : inRoom ? "friend" : "local";
   };
   const friendAt = (i: number) => friendsIn[Array.from({ length: i }, (_, j) => kindAt(j)).filter((k) => k === "friend").length];
@@ -677,11 +677,16 @@ function StarterSetup({
                   <button type="button" className={!teams ? "sel" : ""} onClick={() => set({ teams: false })}>
                     Free for all
                   </button>
-                  <button type="button" className={teams ? "sel" : ""} disabled={s.mode === "ai"} onClick={() => set({ teams: true })}>
+                  <button type="button" className={teams ? "sel" : ""} onClick={() => set({ teams: true })}>
                     Teams 2 vs 2
                   </button>
                 </div>
-                <small className="pf-hint">{s.mode === "ai" ? "Teams need four players online: the AI can't play in a team." : teams ? "Teams: four friends (the AI can't play in a team)." : ""}</small>
+                {teams && (
+                  <small className="pf-hint">
+                    Seats 1+2 against 3+4 in a free-for-all game: don't attack your teammate (the AI doesn't know about teams). When the other team is out, the survivor of the
+                    winning team takes the game (the teammate concedes, or record the result by hand).
+                  </small>
+                )}
               </div>
             )}
             {s.mode === "friend" && (
@@ -691,7 +696,7 @@ function StarterSetup({
                     <div className="pf-seat-head">
                       <b>Seat {i + 1}</b>
                       {teams && <span className="pf-hint">{i === 1 ? "your teammate" : "opponent team"}</span>}
-                      {!teams && <div className="pf-seg">
+                      {<div className="pf-seg">
                         <button type="button" className={s.seatKinds[i - 1] !== "ai" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i - 1 ? "friend" : x)) })}>
                           Friend
                         </button>
@@ -719,14 +724,13 @@ function StarterSetup({
               </label>
               <label className="pf-field">
                 <span>Starting life</span>
-                <input type="number" min={1} max={999} placeholder={teams ? "per team" : commanderRules ? "40" : "20"} value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
+                <input type="number" min={1} max={999} placeholder={commanderRules ? "40" : "20"} value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
               </label>
             </div>
             <div className="pf-summary">
               <b>{packsRounded}</b> boosters{packsRounded !== s.packs ? ` (a multiple of ${n} players)` : ""} → <b>{packsRounded / n + 1}</b> games: one before each round of boosters, then a last one.
               {n === 2 ? " Game 1 starts at random, later games the loser chooses." : " Game 1 starts at random, later games the player after the winner starts."}
-              {teams && " Teams: seats 1+2 against 3+4 (Two-Headed Giant rules, shared life)."}
-              {teams && commanderRules && " With commanders: Two-Headed Giant Commander (command zone, any list)."}
+              {teams && " Teams: seats 1+2 against 3+4."}
               {s.mode === "friend" && !inRoom && <> Open a room above, or start now and send your friend the save code.</>}
             </div>
           </div>
@@ -985,6 +989,7 @@ function StarterMatch({
       aiDeck: AI_DECK,
       players: run.players.length,
       tableNames: run.players.map((p) => p.name),
+      tableCos: roomCosmetics(room.players),
       aiSeats: ownsTable
         ? others.filter((x) => x.p.kind === "ai").map((x) => ({ player: forMatch(x.p, deckRules), difficulty: run.difficulty, seatIndex: x.i }))
         : [],

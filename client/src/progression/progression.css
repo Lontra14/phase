@@ -456,3 +456,12 @@
 .pf-blocktabs .pf-vchip small { font-size: 0.66rem; color: var(--muted); max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-blocktabs .pf-vchip.empty small { color: #f2b49f; }
 .pf-setpick-list button.sel { background: rgba(201, 162, 75, 0.18); border-color: rgba(201, 162, 75, 0.55); }
+/* Saved card backs */
+.pf-backtile-saved { position: relative; cursor: default; }
+.pf-backtile-saved .pick { background: none; border: 0; padding: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; color: inherit; font: inherit; letter-spacing: inherit; width: 100%; }
+.pf-backtile-saved:hover img { transform: translateY(-3px); }
+.pf-backtile-saved .tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
+.pf-backtile-saved:hover .tools, .pf-backtile-saved.on .tools { opacity: 1; }
+.pf-backtile-saved .tools button { width: 1.6rem; height: 1.6rem; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(10, 8, 18, 0.8); color: #fff; cursor: pointer; font-size: 0.85rem; line-height: 1; }
+.pf-backtile-saved .tools button:hover { background: rgba(214, 80, 62, 0.85); }
+@media (hover: none) { .pf-backtile-saved .tools { opacity: 1; } }

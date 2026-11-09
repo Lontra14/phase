@@ -45,7 +45,15 @@ for (const file of readdirSync(decksDir)) {
   const type = String(data.type ?? "");
   const count = (list) => (list ?? []).reduce((t, c) => t + (c.count ?? 1), 0);
   const total = count(data.mainBoard);
-  const commanders = Array.isArray(data.commander) ? data.commander : [];
+  // The commander: MTGJSON's "commander" section; older Commander decks name it only
+  // as "displayCommander" or keep it in the main deck (then: the legendary creature
+  // whose colour identity is the deck's, the rarest first).
+  let commanders = Array.isArray(data.commander) && data.commander.length ? data.commander : [];
+  if (!commanders.length && Array.isArray(data.displayCommander) && data.displayCommander.length) commanders = data.displayCommander;
+  if (!commanders.length && COMMANDER_TYPE.test(type) && !COMMANDER_EXCLUDED.test(type) && total >= 98 && total <= 101) {
+    const guess = guessCommander(data.mainBoard);
+    if (guess) commanders = [{ ...guess, count: 1 }];
+  }
   // A commander precon: 1-2 commanders and about 100 cards in all (some lists carry the commander in the main deck too).
   const isCommander =
     COMMANDER_TYPE.test(type) &&
@@ -69,7 +77,8 @@ for (const file of readdirSync(decksDir)) {
         n -= 1;
       }
       if (n <= 0) continue;
-      const row = cardRow({ ...c, count: n });
+      // Commander precons keep a card with no Scryfall id (it gets the default art).
+      const row = cardRow({ ...c, count: n }) ?? (isCommander ? cardRow({ ...c, count: n }, true) : null);
       if (!row) {
         missingId = true;
         continue;
@@ -98,10 +107,23 @@ for (const file of readdirSync(decksDir)) {
   });
 }
 
+/** The likely commander of a 100-card list with no commander section. */
+function guessCommander(main) {
+  const identity = new Set(main.flatMap((c) => c.colorIdentity ?? []));
+  const rank = { mythic: 4, special: 3, rare: 2, uncommon: 1, common: 0 };
+  const can = (c) => /Legendary/.test(c.type ?? "") && (/Creature/.test(c.type ?? "") || /can be your commander/i.test(c.text ?? ""));
+  const fits = main.filter((c) => can(c) && (c.colorIdentity ?? []).length === identity.size && (c.colorIdentity ?? []).every((x) => identity.has(x)));
+  const pool = fits.length ? fits : main.filter(can);
+  return pool.slice().sort((a, b) => (rank[b.rarity] ?? 0) - (rank[a.rarity] ?? 0))[0] ?? null;
+}
+
 /** One card line: [name, count, set, number, scryfallIdHex, rarity, type, mv, colors, cost, identity] (null without a Scryfall id). */
-function cardRow(c) {
-  const id = String(c.identifiers?.scryfallId ?? "").replace(/-/g, "");
-  if (id.length !== 32) return null;
+function cardRow(c, allowNoId = false) {
+  let id = String(c.identifiers?.scryfallId ?? "").replace(/-/g, "");
+  if (id.length !== 32) {
+    if (!allowNoId) return null;
+    id = "";
+  }
   return [
     c.name,
     c.count ?? 1,

@@ -95,7 +95,8 @@ function printFor(data: ProgData, raw: RawCard, date: string): ProgPrint {
   if (!print) {
     const card = cardFor(data, raw);
     const r: Rarity = isMainRarity(rarity) ? rarity : usualRarity(data.byName.get(card.name));
-    print = { key, card, set: setFor(data, setCode, date), cn: number, rarity: r, id };
+    // A card with no Scryfall id in the list: the art of another printing of it.
+    print = { key, card, set: setFor(data, setCode, date), cn: number, rarity: r, id: id || data.byName.get(card.name)?.[0]?.id || "" };
     data.byKey.set(key, print);
   }
   return print;

@@ -23,7 +23,7 @@ import { WheelOfFortune } from "../progression/WheelOfFortune";
 import type { ProgData, ProgPrint, Rarity } from "../progression/data";
 import { RARITY_COLOR, RARITY_LABEL, loadProgressionData, printImage } from "../progression/data";
 import { advanceBlock, applyResult, applySealed, claimReward, prepareBlock, rarityOrder, repairReward, resultWinner, rewardNeedsRepair, sealedFor, seriesTarget } from "../progression/flow";
-import { deckSize, hostFriendMatch, joinFriendMatch, launchAiMatch } from "../progression/launch";
+import { deckSize, hostFriendMatch, joinFriendMatch, launchAiMatch, roomCosmetics } from "../progression/launch";
 import type { Pack } from "../progression/packs";
 import type { Basics, Owned, PackSetRef, PlayerState, RunSettings, RunState, Slot } from "../progression/run";
 import {
@@ -44,12 +44,14 @@ import {
   yearsLabel,
 } from "../progression/run";
 import "../progression/progression.css";
-import type { RoomMe, RoomState } from "../progression/room";
+import type { RoomMe } from "../progression/room";
 import { RoomPanel, RoomToasts, useAutoMatchRoom } from "../progression/room";
 import type { HubState } from "../progression/roomHub";
 import { useRoomHub } from "../progression/roomHub";
 
 const SETTINGS_KEY = "phase-progression-settings";
+const TEAMS_NOTE =
+  "Seats 1+2 against 3+4 in a free-for-all game: don't attack your teammate (the AI doesn't know about teams). When the other team is out, the survivor of the winning team takes the game (the teammate concedes, or record the result by hand).";
 const THIS_YEAR = new Date().getFullYear();
 
 type SeatKind = "ai" | "friend";
@@ -608,8 +610,8 @@ function SetupScreen({
   const last = Math.min(data?.lastYear ?? THIS_YEAR, THIS_YEAR);
   const years = useMemo(() => Array.from({ length: last - first + 1 }, (_, i) => first + i), [first, last]);
   const set = (patch: Partial<ProgSetup>) => setS((cur) => ({ ...cur, ...patch }));
-  // Teams need four people: phase.rs's AI cannot play as part of a team.
-  const teamsOn = s.players === 4 && !!s.teams && s.mode === "friend";
+  // Teams: seats 1+2 against 3+4 in a free-for-all game.
+  const teamsOn = s.players === 4 && !!s.teams;
   const packBlocks = s.packBlocks ?? [[]];
   const effective: RunSettings = { ...s, packBlocks: s.packMode === "sets" ? packBlocks : undefined, teams: teamsOn };
   const emptyBlocks = s.packMode === "sets" ? packBlocks.filter((b) => !b.length).length : 0;
@@ -618,7 +620,7 @@ function SetupScreen({
   const bestOf = s.bestOf ?? 3;
 
   // The table: me, then seats 2..players (vs AI all AIs; online a friend or an AI each).
-  const seatKinds: SeatKind[] = s.seatKinds.slice(0, s.players - 1).map((k) => (s.mode === "ai" ? "ai" : teamsOn ? "friend" : k));
+  const seatKinds: SeatKind[] = s.seatKinds.slice(0, s.players - 1).map((k) => (s.mode === "ai" ? "ai" : k));
   const friendSeats = seatKinds.filter((k) => k === "friend").length;
   const aiName = (n: number) => {
     const base = s.names[1].trim() || "Forge AI";
@@ -762,7 +764,7 @@ function SetupScreen({
               )}
               <label className="pf-field">
                 <span>Starting life</span>
-                <input type="number" min={1} max={999} placeholder={teamsOn ? "30 per team" : "20"} value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
+                <input type="number" min={1} max={999} placeholder="20" value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
               </label>
             </div>
             {s.players === 4 && (
@@ -772,11 +774,11 @@ function SetupScreen({
                   <button type="button" className={!teamsOn ? "sel" : ""} onClick={() => set({ teams: false })}>
                     Free for all
                   </button>
-                  <button type="button" className={teamsOn ? "sel" : ""} disabled={s.mode === "ai"} onClick={() => set({ teams: true })}>
+                  <button type="button" className={teamsOn ? "sel" : ""} onClick={() => set({ teams: true })}>
                     Teams 2 vs 2
                   </button>
                 </div>
-                <small className="pf-hint">{s.mode === "ai" ? "Teams need four players online: the AI can't play in a team." : teamsOn ? "Teams: four friends (the AI can't play in a team)." : ""}</small>
+                {teamsOn && <small className="pf-hint">{TEAMS_NOTE}</small>}
               </div>
             )}
             <div className="pf-seats" style={{ marginTop: "0.9rem" }}>
@@ -793,7 +795,7 @@ function SetupScreen({
                       Seat {i + 2} · {seatName(i)}
                     </b>
                     {teamsOn && <span className="pf-hint">{i === 0 ? "team A · your teammate" : "team B"}</span>}
-                    {s.mode === "friend" && !teamsOn && (
+                    {s.mode === "friend" && (
                       <div className="pf-seg">
                         <button type="button" className={k === "friend" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i ? "friend" : x)) })}>
                           Friend
@@ -985,7 +987,7 @@ function MatchStep({
   setRun: (r: RunState) => void;
   onError: (e: string | null) => void;
   navigate: (to: string, opts?: { state?: unknown }) => void;
-  room: RoomState;
+  room: HubState;
 }) {
   const me = run.players[run.me];
   const others = othersOf(run);
@@ -1015,11 +1017,11 @@ function MatchStep({
     enabled: inRoom && !run.pendingResult && !manualRoom && !cardsLoading,
     host: async () => {
       setRun({ ...run, pendingGameId: "*" });
-      await hostFriendMatch(run, data);
+      await hostFriendMatch(run, data, { tableCos: roomCosmetics(room.players) });
     },
     join: async (code) => {
       setRun({ ...run, pendingGameId: "*" });
-      await joinFriendMatch(run, data, code, crypto.randomUUID(), navigate);
+      await joinFriendMatch(run, data, code, crypto.randomUUID(), navigate, { tableCos: roomCosmetics(room.players) });
     },
     onError: (e) => onError(e),
     seat: run.me === 0 ? undefined : friendOrder,
@@ -1202,7 +1204,7 @@ function MatchStep({
                   </div>
                 ) : (
                   <div className="pf-row" style={{ justifyContent: "flex-start", marginTop: "0.6rem" }}>
-                    <button type="button" className="pf-btn" disabled={busy || loading} onClick={() => void start(() => hostFriendMatch(run, data), "*")}>
+                    <button type="button" className="pf-btn" disabled={busy || loading} onClick={() => void start(() => hostFriendMatch(run, data, { tableCos: roomCosmetics(room.players) }), "*")}>
                       Create room ▸
                     </button>
                   </div>
@@ -1233,7 +1235,7 @@ function MatchStep({
                         return;
                       }
                       const gameId = crypto.randomUUID();
-                      void start(() => joinFriendMatch(run, data, code, gameId, navigate), "*");
+                      void start(() => joinFriendMatch(run, data, code, gameId, navigate, { tableCos: roomCosmetics(room.players) }), "*");
                     }}
                   >
                     Join ▸

@@ -789,6 +789,7 @@ function CardPreviewInner({
         layout={mobileLayout ?? "modal"}
         report={reportContext}
         rfOwner={obj ? (obj.controller === rfMe ? "me" : "opp") : undefined}
+        rfSeat={obj?.controller}
       />
     );
   }
@@ -845,6 +846,7 @@ function CardPreviewInner({
             : { duration: 0.08 * animationSpeedMultiplier }
         }
         data-rf-owner={obj ? (obj.controller === rfMe ? "me" : "opp") : undefined}
+        data-rf-seat={obj?.controller}
         data-mobile-hand-preview-state={mobileHandPreviewState}
         data-mobile-hand-preview-wobble={wobbleHeldPreview || undefined}
       >
@@ -892,9 +894,12 @@ function MobilePreviewOverlay({
   layout = "modal",
   report,
   rfOwner,
+  rfSeat,
 }: {
   /** Rogue Forge: whose card this is (each player's basic land art / card back). */
   rfOwner?: "me" | "opp";
+  /** Rogue Forge: that player's seat (tables of 3-4: each opponent has their own back). */
+  rfSeat?: number;
   cardName: string;
   /** The parent's RESOLVED art state (marker / generic back / peek already
    *  applied). The overlay must never run its own lookup: a second
@@ -954,6 +959,7 @@ function MobilePreviewOverlay({
         className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center p-4"
         data-card-preview
         data-rf-owner={rfOwner}
+        data-rf-seat={rfSeat}
       >
         {art.kind === "back" ? (
           <CardBackFallback className="pointer-events-auto max-h-[60vh] max-w-[68vw] w-[68vw] rounded-xl border border-white/15 shadow-2xl" />
@@ -992,6 +998,7 @@ function MobilePreviewOverlay({
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 landscape:justify-end landscape:p-6"
       data-card-preview
       data-rf-owner={rfOwner}
+      data-rf-seat={rfSeat}
       onPointerDown={onDismiss}
     >
       <div

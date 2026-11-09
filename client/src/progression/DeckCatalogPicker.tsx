@@ -4,6 +4,7 @@ import type { ProgData } from "./data";
 import type { CatalogDeck } from "./deckCatalog";
 import { loadDeckCatalog } from "./deckCatalog";
 
+const PER_PAGE = 40;
 const PIP: Record<string, string> = { W: "#f4ecd4", U: "#4a90d9", B: "#a487c4", R: "#d6503e", G: "#4fb277", C: "#b9b2a6" };
 
 /** Search every ready-made deck (precons, meta decks of every year) and pick one. */
@@ -12,15 +13,19 @@ export function DeckCatalogPicker({ data, commander, onPick, label = "Ready-made
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("");
+  const [page, setPage] = useState(0);
   useEffect(() => {
     void loadDeckCatalog(data).then(setAll);
   }, [data]);
   const decks = useMemo(() => all.filter((d) => !commander || d.commander), [all, commander]);
   const groups = useMemo(() => [...new Set(decks.map((d) => d.group))], [decks]);
-  const shown = useMemo(() => {
+  const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return decks.filter((d) => (!group || d.group === group) && (!q || `${d.name} ${d.group} ${d.detail}`.toLowerCase().includes(q))).slice(0, 60);
+    return decks.filter((d) => (!group || d.group === group) && (!q || `${d.name} ${d.group} ${d.detail}`.toLowerCase().includes(q)));
   }, [decks, group, query]);
+  const pages = Math.max(1, Math.ceil(matches.length / PER_PAGE));
+  const pg = Math.min(page, pages - 1);
+  const shown = matches.slice(pg * PER_PAGE, pg * PER_PAGE + PER_PAGE);
 
   if (!open)
     return (
@@ -31,8 +36,22 @@ export function DeckCatalogPicker({ data, commander, onPick, label = "Ready-made
   return (
     <div className="pf-catalog">
       <div className="pf-catalog-bar">
-        <input autoFocus placeholder="Search name, format, year…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <select value={group} onChange={(e) => setGroup(e.target.value)}>
+        <input
+          autoFocus
+          placeholder="Search name, format, year…"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPage(0);
+          }}
+        />
+        <select
+          value={group}
+          onChange={(e) => {
+            setGroup(e.target.value);
+            setPage(0);
+          }}
+        >
           <option value="">All ({decks.length})</option>
           {groups.map((g) => (
             <option key={g} value={g}>
@@ -71,6 +90,19 @@ export function DeckCatalogPicker({ data, commander, onPick, label = "Ready-made
         ))}
         {!shown.length && <p className="pf-hint">No deck matches.</p>}
       </div>
+      {pages > 1 && (
+        <div className="pf-pager" style={{ marginTop: "0.4rem" }}>
+          <button type="button" className="pf-vchip" disabled={pg === 0} onClick={() => setPage(pg - 1)}>
+            ‹ Prev
+          </button>
+          <span className="pf-hint">
+            page {pg + 1} / {pages} · {matches.length} decks
+          </span>
+          <button type="button" className="pf-vchip" disabled={pg >= pages - 1} onClick={() => setPage(pg + 1)}>
+            Next ›
+          </button>
+        </div>
+      )}
     </div>
   );
 }

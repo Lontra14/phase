@@ -163,3 +163,35 @@ export function setOpponentCosmetics(c: SharedCosmetics | null): void {
   (window as unknown as { __rfOpp?: SharedCosmetics | null }).__rfOpp = c;
   window.dispatchEvent(new CustomEvent("rf-cosmetics"));
 }
+
+// ── Saved backs: your own drawings / images, as many as you like ────────────
+
+export const SAVED_BACKS_KEY = "rogue-forge-saved-backs";
+export interface SavedBack {
+  id: string;
+  img: string;
+}
+const MAX_SAVED_BACKS = 30;
+
+export function loadSavedBacks(): SavedBack[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(SAVED_BACKS_KEY) ?? "[]") as SavedBack[];
+    const list = Array.isArray(v) ? v.filter((b) => b && typeof b.id === "string" && typeof b.img === "string") : [];
+    // The back drawn before the gallery existed joins it.
+    const cur = loadCosmetics().back;
+    if (cur.id === "custom" && cur.img && !list.some((b) => b.img === cur.img)) list.unshift({ id: `b${Date.now().toString(36)}`, img: cur.img });
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+/** Keep the gallery (false when the browser storage is full). */
+export function saveSavedBacks(list: SavedBack[]): boolean {
+  try {
+    localStorage.setItem(SAVED_BACKS_KEY, JSON.stringify(list.slice(0, MAX_SAVED_BACKS)));
+    return true;
+  } catch {
+    return false;
+  }
+}

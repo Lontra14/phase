@@ -28,7 +28,7 @@ import type { ImportedDeck } from "../progression/deckImport";
 import { DeckCatalogPicker } from "../progression/DeckCatalogPicker";
 import { DeckImportPanel, importReady } from "../progression/DeckImportPanel";
 import type { MatchSpec, TableSeat } from "../progression/launch";
-import { engineDeckMinimum, hostFriendMatchSpec, joinFriendMatchSpec, launchAiMatchSpec } from "../progression/launch";
+import { engineDeckMinimum, hostFriendMatchSpec, joinFriendMatchSpec, launchAiMatchSpec, roomCosmetics } from "../progression/launch";
 import type { RoomMe } from "../progression/room";
 import { RoomPanel, RoomToasts, useAutoMatchRoom } from "../progression/room";
 import { useRoomHub } from "../progression/roomHub";
@@ -51,9 +51,6 @@ const TEAMS = (f: LabFormat | undefined) => f === "2hg" || f === "2hgc";
 const FORMATS: { id: LabFormat; label: string; spec: NonNullable<MatchSpec["format"]>; note: string }[] = [
   { id: "normal", label: "Normal (free for all)", spec: "Freeform", note: "Any cards, any number of copies. At 3-4 players everyone plays for themselves." },
   { id: "commander", label: "👑 Commander", spec: "Commander", note: "Each deck has a commander in the command zone (commander damage, 40 life unless you set another). Any cards, any number of copies." },
-  { id: "2hg", label: "Teams 2 vs 2 (Two-Headed Giant)", spec: "TwoHeadedGiant", note: "4 players in two teams of two (seats 1+2 against 3+4), 30 life per team, shared turns. Friends online only (the AI can't play in a team). Any cards, any deck size." },
-  { id: "2hgc", label: "👑 Teams 2 vs 2 Commander", spec: "TwoHeadedGiantCommander", note: "Two-Headed Giant with commanders: 4 players in two teams (seats 1+2 against 3+4), command zone, 60 life per team. Friends online only. Any cards, any number of copies, any deck size." },
-  { id: "archenemy", label: "Archenemy", spec: "Archenemy", note: "Seat 1 (the host / you) is the archenemy with a scheme deck; everyone else plays together against them. Decks of at least 60 cards." },
   { id: "planechase", label: "Planechase", spec: "Planechase", note: "2 to 4 players, a shared planar deck (supplied by the engine), roll the planar die. Friends online only: the AI cannot play Planechase. Any cards, any deck size." },
   { id: "planechasec", label: "👑 Planechase Commander", spec: "PlanechaseCommander", note: "Planechase with commanders: 2 to 4 players, command zone, shared planar deck. Friends online only. Any cards, any number of copies, any deck size." },
 ];
@@ -193,10 +190,12 @@ export function MatchLabPage() {
 
   // Vs friends: the room (up to 4 players). The guests follow the host's rules.
   const [guestRules, setGuestRules] = useState<{ format?: LabFormat; players?: number } | null>(null);
-  const format: LabFormat = (s.mode === "friend" && guestRules?.format) || s.format;
+  // Two-Headed Giant and Archenemy are hidden for now (team turns misbehave in this build): older settings fall back to Normal.
+  const wanted: LabFormat = (s.mode === "friend" && guestRules?.format) || s.format;
+  const format: LabFormat = FORMATS.some((f) => f.id === wanted) ? wanted : "normal";
   const fmt = FORMATS.find((f) => f.id === format) ?? FORMATS[0];
   const commander = format === "commander" || format === "2hgc" || format === "planechasec";
-  const noAi = NO_AI(format);
+
   const minDeck = engineDeckMinimum(fmt.spec, Math.max(2, guestRules?.players ?? s.players));
   const deckOk = (d: ImportedDeck | null) => importReady(d, commander) && (d?.size ?? 0) + (d?.commanders.length ?? 0) >= minDeck;
   const youReady = deckOk(you);
@@ -209,6 +208,8 @@ export function MatchLabPage() {
     setGuestRules(!host && inRoom && hostSettings ? hostSettings : null);
   }, [host, inRoom, hostSettings]);
   const players = TEAMS(format) ? 4 : guestRules?.players ?? s.players;
+  // Archenemy: the heroes share one turn, which the AI cannot play — AI heroes only 1 on 1.
+  const noAi = NO_AI(format) || (format === "archenemy" && players > 2);
 
   // The table: seats 2..players. Vs AI they are all AIs; online each is a friend or an AI.
   const seats = s.seats.slice(0, players - 1).map((x) => ({ ...x, kind: s.mode === "ai" ? ("ai" as const) : noAi ? ("friend" as const) : x.kind }));
@@ -245,6 +246,7 @@ export function MatchLabPage() {
       format: fmt.spec,
       players,
       aiSeats,
+      tableCos: roomCosmetics(hub.players),
     };
   };
 
@@ -267,7 +269,7 @@ export function MatchLabPage() {
     if (busy || !data) return;
     setError(null);
     if (noAi) {
-      setError(`${fmt.label}: the AI can't play it — play it online with friends.`);
+      setError(format === "archenemy" ? "Archenemy vs AI: 2 players only (the AI can't play the heroes' shared turn). With 3-4 players the heroes are friends online." : `${fmt.label}: the AI can't play it — play it online with friends.`);
       return;
     }
     if (!youReady || !aisReady) {

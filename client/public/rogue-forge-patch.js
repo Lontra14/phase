@@ -357,6 +357,7 @@
   // The phone's full-screen preview carries no owner: it belongs to the card the
   // player last touched (a long press on it opened the preview).
   var lastTouchedOwner = null;
+  var lastTouchedSeat = null;
   document.addEventListener(
     "pointerdown",
     function (e) {
@@ -364,9 +365,30 @@
       if (!t || !t.closest || t.closest("[data-card-preview]")) return;
       var o = t.closest("[data-rf-owner]");
       lastTouchedOwner = o ? o.getAttribute("data-rf-owner") : null;
+      lastTouchedSeat = seatOf(t);
     },
     true,
   );
+  // Tables of 3-4: which opponent a card belongs to (its seat), so each one shows
+  // their own back and lands (window.__rfOppSeats = { seat: cosmetics }).
+  function seatOf(el) {
+    if (!el || !el.closest) return null;
+    var s = el.closest("[data-rf-seat]");
+    if (s && s.getAttribute("data-rf-seat") !== "") return s.getAttribute("data-rf-seat");
+    var pane = el.closest("[data-testid^='opponent-seat-pane-'],[data-testid^='player-area-']");
+    if (pane) {
+      var m = /(\d+)$/.exec(pane.getAttribute("data-testid") || "");
+      if (m) return m[1];
+    }
+    if (lastTouchedSeat && el.closest("[data-card-preview]")) return lastTouchedSeat;
+    return null;
+  }
+  function oppCos(el) {
+    var seats = window.__rfOppSeats;
+    var seat = seatOf(el);
+    if (seats && seat != null && seats[seat]) return seats[seat];
+    return window.__rfOpp || null;
+  }
   function ownerOf(el) {
     var o = el.closest ? el.closest("[data-rf-owner]") : null;
     if (o) return o.getAttribute("data-rf-owner");
@@ -381,8 +403,11 @@
       return null;
     }
   }
-  function backFor(owner) {
-    if (owner === "opp") return (window.__rfOpp && window.__rfOpp.back) || null;
+  function backFor(owner, el) {
+    if (owner === "opp") {
+      var c = oppCos(el);
+      return (c && c.back) || null;
+    }
     return myBackUrl();
   }
   function rewriteBack(el) {
@@ -397,7 +422,7 @@
       return false;
     }
     if (cur.indexOf("backs.scryfall.io/") >= 0) el.setAttribute("data-rf-backorig", cur);
-    var want = backFor(ownerOf(el)) || el.getAttribute("data-rf-backorig") || cur;
+    var want = backFor(ownerOf(el), el) || el.getAttribute("data-rf-backorig") || cur;
     if (want !== cur) {
       el.removeAttribute("srcset");
       el.setAttribute("data-rf-backurl", want);
@@ -420,7 +445,8 @@
         // player's art. Your lands: your pick; the opponent's: their pick, if any.
         var opp = ownerOf(el) === "opp";
         if (opp) {
-          var oid = window.__rfOpp && window.__rfOpp.lands ? fullId(window.__rfOpp.lands[alt]) : null;
+          var oc = oppCos(el);
+          var oid = oc && oc.lands ? fullId(oc.lands[alt]) : null;
           pk = oid ? { id: oid } : null;
         } else pk = landPicks()[alt] || null;
         if (pk && !pk.id) pk = null;

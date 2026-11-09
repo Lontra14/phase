@@ -6,7 +6,8 @@ import { useEffect } from "react";
 
 import { useGameStore } from "../stores/gameStore";
 import { useMultiplayerStore } from "../stores/multiplayerStore";
-import { TABLE_NAMES_KEY } from "./launch";
+import { BACK_PRESETS, loadCosmetics, type SharedCosmetics } from "./cosmetics";
+import { TABLE_COS_KEY, TABLE_NAMES_KEY } from "./launch";
 import { CHESS_RUN_KEY, STARTER_AUTOSAVE_KEY } from "./run";
 
 const RUN_KEYS = ["phase-progression-run", STARTER_AUTOSAVE_KEY, CHESS_RUN_KEY];
@@ -85,9 +86,53 @@ export function ProgressionResultWatcher(): null {
       });
       if (changed) useMultiplayerStore.setState({ playerNames: next });
     };
-    apply();
-    const a = useGameStore.subscribe(apply);
-    const b = useMultiplayerStore.subscribe(apply);
+    // Each opponent's own card back and lands (tables of 3-4): by player name, from
+    // the room; the AIs each get a different preset. Read by rogue-forge-patch.js.
+    let lastSeats = "";
+    const applyCos = () => {
+      const { gameState } = useGameStore.getState();
+      if (!gameState) return;
+      const names = useMultiplayerStore.getState().playerNames as Map<number, string> | undefined;
+      if (!names?.size) return;
+      type StoredCos = { cos?: Record<string, SharedCosmetics | undefined>; at?: number };
+      let stored: StoredCos | null;
+      try {
+        stored = JSON.parse(localStorage.getItem(TABLE_COS_KEY) ?? "null") as StoredCos | null;
+      } catch {
+        stored = null;
+      }
+      if (stored && Date.now() - (stored.at ?? 0) > 12 * 3600 * 1000) stored = null;
+      const vsAi = useGameStore.getState().gameMode === "ai" || useGameStore.getState().gameMode === "native-ai";
+      // Online games without the room's list (Chess, two players) keep the direct swap (window.__rfOpp).
+      if (!stored && !vsAi) {
+        if (lastSeats) {
+          lastSeats = "";
+          delete (window as unknown as { __rfOppSeats?: unknown }).__rfOppSeats;
+          window.dispatchEvent(new CustomEvent("rf-cosmetics"));
+        }
+        return;
+      }
+      const mine = loadCosmetics().back.id;
+      const presets = BACK_PRESETS.filter((p) => p.id !== "classic" && p.id !== mine);
+      const seats: Record<string, SharedCosmetics> = {};
+      let k = 0;
+      for (const [seat, name] of [...names.entries()].sort((a, b) => a[0] - b[0])) {
+        const c = stored?.cos?.[name];
+        seats[String(seat)] = c ?? { back: presets[k++ % presets.length]?.url ?? null, lands: {} };
+      }
+      const sig = JSON.stringify(seats);
+      if (sig === lastSeats) return;
+      lastSeats = sig;
+      (window as unknown as { __rfOppSeats?: Record<string, SharedCosmetics> }).__rfOppSeats = seats;
+      window.dispatchEvent(new CustomEvent("rf-cosmetics"));
+    };
+    const both = () => {
+      apply();
+      applyCos();
+    };
+    both();
+    const a = useGameStore.subscribe(both);
+    const b = useMultiplayerStore.subscribe(both);
     return () => {
       a();
       b();

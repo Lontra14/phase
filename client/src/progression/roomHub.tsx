@@ -82,7 +82,7 @@ export function useRoomHub(mode: RoomMode, me: RoomMe | null): HubState {
     if (room.role === "host") {
       const lobby = () => {
         const list = [{ ...(meMsg() as unknown as HubPlayer), id: "host" }, ...players.values()];
-        const msg = { k: "lobby", players: list.map(({ id: pid, name, deck, commander, custom }) => ({ id: pid, name, deck, commander, custom })) };
+        const msg = { k: "lobby", players: list.map(({ id: pid, name, deck, commander, custom, cos }) => ({ id: pid, name, deck, commander, custom, cos })) };
         sticky.set("lobby", msg);
         for (const c of conns.keys()) raw(c, msg);
         setGuests([...players.values()]);
@@ -103,7 +103,7 @@ export function useRoomHub(mode: RoomMode, me: RoomMe | null): HubState {
             const m = JSON.parse(String(d)) as Record<string, unknown>;
             if (m.k === "me" && typeof m.id === "string") {
               conns.set(c, m.id);
-              players.set(m.id, { id: m.id, name: String(m.name ?? "Player"), deck: (m.deck as string | null) ?? null, commander: !!m.commander, custom: m.custom });
+              players.set(m.id, { id: m.id, name: String(m.name ?? "Player"), deck: (m.deck as string | null) ?? null, commander: !!m.commander, custom: m.custom, cos: m.cos as SharedCosmetics | undefined });
               if (m.cos) rememberLobbyOpponent(m.cos as SharedCosmetics);
               lobby();
             }
