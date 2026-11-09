@@ -22,7 +22,8 @@ import { loadProgressionData, printImage } from "../progression/data";
 import type { MatchSpec } from "../progression/launch";
 import { deckSize, hostFriendMatchSpec, joinFriendMatchSpec, launchAiMatchSpec } from "../progression/launch";
 import { makeRng } from "../progression/rng";
-import type { Basics, PlayerState, Slot } from "../progression/run";
+import type { Basics, PlayerState } from "../progression/run";
+import type { Slot } from "../chess/chess";
 import { exportList } from "../progression/run";
 import type { LinkPeer, LinkStatus } from "../progression/starterLink";
 import type { StarterDeck } from "../progression/starterData";
@@ -378,7 +379,7 @@ function ChessSetup({
   const list: AnyDeck[] = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (source === "list") return [];
-    if (source === "meta" || commanderRules)
+    if (source === "meta" || (commanderRules && source !== "starter"))
       return metas.filter(
         (d) =>
           (!commanderRules || !!d.commanderFormat) &&
@@ -386,7 +387,11 @@ function ChessSetup({
           (!year || (year === "today" ? d.source === "today" : d.source === "history" && String(d.year) === year)) &&
           (!q || d.name.toLowerCase().includes(q) || (d.period ?? "").toLowerCase().includes(q) || (d.event ?? "").toLowerCase().includes(q)),
       );
-    return starters.filter((d) => !q || d.name.toLowerCase().includes(q) || String(d.year).includes(q)).slice().reverse();
+    // Normal: the 60-card precons; Commander: the official Commander precons.
+    return starters
+      .filter((d) => !!d.commanderFormat === commanderRules && (!q || d.name.toLowerCase().includes(q) || String(d.year).includes(q) || (d.commanders ?? []).some((c) => c.toLowerCase().includes(q))))
+      .slice()
+      .reverse();
   }, [source, metas, starters, query, format, year, commanderRules]);
   const PAGE = 24;
   const pages = Math.max(1, Math.ceil(list.length / PAGE));
@@ -638,15 +643,15 @@ function ChessSetup({
             className={commanderRules ? "sel" : ""}
             onClick={() => {
               setCommanderRules(true);
-              if (source === "starter") setSource("meta");
+              if (source === "starter" && !starters.some((d) => d.commanderFormat)) setSource("meta");
             }}
           >
             👑 Commander
           </button>
         </div>
-        {!commanderRules && (
+        {(!commanderRules || starters.some((d) => d.commanderFormat)) && (
           <button type="button" className={`pf-vchip${source === "starter" ? " sel" : ""}`} onClick={() => setSource("starter")}>
-            Starter precons
+            {commanderRules ? "Commander precons" : "Starter precons"}
           </button>
         )}
         <button type="button" className={`pf-vchip${source === "meta" ? " sel" : ""}`} onClick={() => setSource("meta")}>

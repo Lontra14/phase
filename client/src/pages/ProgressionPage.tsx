@@ -1,11 +1,12 @@
-// Progression — Rogue Forge mode.
+// Progression — Pay the 1 pt1 mode.
 //
-// Pick a start year, an end year and how many years each block covers (1–5).
-// Every block: open a sealed pool of boosters printed in those years, build a
-// deck (Rogue Forge deck builder), play a best of three (vs the AI or a friend).
-// The loser opens 3 random cards that were on The List; the winner spins the
+// Pick a start year, an end year and how many years each block covers (1–5),
+// or pick the booster sets themselves. Every block: open a sealed pool of those
+// boosters, build a deck (deck builder), play a best of 1, 3 or 5 at a table of
+// 2 to 4 (AIs and friends online; at 4, everyone for themselves or two teams).
+// The losers open 3 random cards that were on The List; the winner spins the
 // Wheel of Fortune over the rarities in the pool and takes 1 card of that
-// rarity out of 30 from the block's years. Then the timeline moves on.
+// rarity out of 30 from the block's boosters. Then the timeline moves on.
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -21,13 +22,14 @@ import { Timeline } from "../progression/Timeline";
 import { WheelOfFortune } from "../progression/WheelOfFortune";
 import type { ProgData, ProgPrint, Rarity } from "../progression/data";
 import { RARITY_COLOR, RARITY_LABEL, loadProgressionData, printImage } from "../progression/data";
-import { advanceBlock, applyResult, applySealed, claimReward, prepareBlock, rarityOrder, repairReward, rewardNeedsRepair, sealedFor } from "../progression/flow";
+import { advanceBlock, applyResult, applySealed, claimReward, prepareBlock, rarityOrder, repairReward, resultWinner, rewardNeedsRepair, sealedFor, seriesTarget } from "../progression/flow";
 import { deckSize, hostFriendMatch, joinFriendMatch, launchAiMatch } from "../progression/launch";
 import type { Pack } from "../progression/packs";
-import type { Basics, Owned, PlayerState, RunSettings, RunState, Slot } from "../progression/run";
+import type { Basics, Owned, PackSetRef, PlayerState, RunSettings, RunState, Slot } from "../progression/run";
 import {
   autosave,
-  blockYears,
+  blockLabel,
+  blockTags,
   blocksOf,
   createRun,
   decodeRun,
@@ -35,17 +37,34 @@ import {
   exportList,
   importList,
   loadAutosave,
+  runLabel,
+  sameSide,
+  sideLead,
+  sideName,
   yearsLabel,
 } from "../progression/run";
 import "../progression/progression.css";
 import type { RoomMe, RoomState } from "../progression/room";
-import { RoomPanel, RoomToasts, useAutoMatchRoom, useRoom } from "../progression/room";
+import { RoomPanel, RoomToasts, useAutoMatchRoom } from "../progression/room";
+import type { HubState } from "../progression/roomHub";
+import { useRoomHub } from "../progression/roomHub";
 
 const SETTINGS_KEY = "phase-progression-settings";
 const THIS_YEAR = new Date().getFullYear();
 
-function loadSettings(): RunSettings & { names: [string, string] } {
-  const base: RunSettings & { names: [string, string] } = {
+type SeatKind = "ai" | "friend";
+interface ProgSetup extends RunSettings {
+  names: [string, string];
+  /** Players at the table (2-4). */
+  players: number;
+  /** Seats 2..4: a friend online or an AI. */
+  seatKinds: SeatKind[];
+  /** Boosters by year range or by chosen sets. */
+  packMode: "years" | "sets";
+}
+
+function loadSettings(): ProgSetup {
+  const base: ProgSetup = {
     mode: "ai",
     startYear: 1993,
     endYear: 1999,
@@ -55,7 +74,13 @@ function loadSettings(): RunSettings & { names: [string, string] } {
     allowPartial: false,
     difficulty: "Medium",
     startingLife: null,
+    bestOf: 3,
+    teams: false,
     names: ["Player", "Forge AI"],
+    players: 2,
+    seatKinds: ["friend", "friend", "friend"],
+    packMode: "years",
+    packSets: [],
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -63,6 +88,8 @@ function loadSettings(): RunSettings & { names: [string, string] } {
   } catch {
     // ignore
   }
+  if (!Array.isArray(base.seatKinds) || base.seatKinds.length < 3) base.seatKinds = ["friend", "friend", "friend"];
+  if (!Array.isArray(base.packSets)) base.packSets = [];
   return base;
 }
 
@@ -73,6 +100,15 @@ function download(name: string, text: string) {
   a.download = name;
   a.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/** The players I face (everyone else at the table). */
+const othersOf = (run: RunState) => run.players.map((p, i) => ({ p, i })).filter((x) => x.i !== run.me);
+
+/** The run the host sent to the room, with the seat of every friend's device. */
+interface RoomRun {
+  run?: RunState;
+  seats?: Record<string, number>;
 }
 
 export function ProgressionPage() {
@@ -92,23 +128,27 @@ export function ProgressionPage() {
   const [sheet, setSheet] = useState<null | "save" | "share">(null);
   const [whoFor, setWhoFor] = useState<RunState | null>(null);
   const [packs, setPacks] = useState<Pack[] | null>(null);
-  // Vs a friend: the mode room (opened before choosing anything, kept for the whole run).
+  // Vs friends: the mode room (opened before choosing anything, kept for the whole run; up to 4 players).
   const [setupMe, setSetupMe] = useState<RoomMe | null>(null);
   const roomMe: RoomMe | null = run ? { name: run.players[run.me].name } : setupMe;
-  const room = useRoom("progression", roomMe);
-  const roomRun = (room.latest.run as { run?: RunState } | undefined)?.run;
+  const room = useRoomHub("progression", roomMe);
+  const roomRun = room.latest.run as RoomRun | undefined;
 
   const setRun = useCallback((next: RunState | null) => {
     setRunState(next);
     autosave(next);
   }, []);
   useEffect(() => {
-    // The guest receives the run the host started and plays seat 2.
-    if (room.room?.role !== "guest" || !roomRun || typeof roomRun.id !== "string") return;
-    if (run && run.id === roomRun.id) return;
-    setRun({ ...roomRun, me: 1 as Slot, pendingGameId: null, pendingResult: null });
+    // A friend receives the run the host started and plays the seat the host gave this device.
+    const r = roomRun?.run;
+    if (room.room?.role !== "guest" || !r || typeof r.id !== "string") return;
+    if (run && run.id === r.id) return;
+    const seat = roomRun?.seats?.[room.myId] ?? (r.players.length === 2 ? 1 : undefined);
+    if (seat === undefined || !r.players[seat]) return;
+    const players = r.players.map((p, i) => (i === seat && !p.pool ? { ...p, pool: [] } : p));
+    setRun({ ...r, players, me: seat as Slot, pendingGameId: null, pendingResult: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room.room?.role, roomRun]);
+  }, [room.room?.role, roomRun, room.myId]);
 
   const say = (msg: string) => {
     setToast(msg);
@@ -138,7 +178,7 @@ export function ProgressionPage() {
     if (!openingKey || !data || !run) return;
     let cancelled = false;
     setPacks(null);
-    setBusy(`Gathering the cards of ${yearsLabel(blockYears(run))}…`);
+    setBusy(`Gathering the cards of ${blockLabel(run, run.block)}…`);
     prepareBlock(data, run)
       .then(() => {
         if (cancelled) return;
@@ -157,12 +197,12 @@ export function ProgressionPage() {
   }, [openingKey, data]);
 
   const me = run ? run.players[run.me] : null;
-  const opp = run ? run.players[(1 - run.me) as Slot] : null;
   const blocks = run ? blocksOf(run) : [];
+  const label = run ? blockLabel(run, run.block) : "";
 
   const updateMe = (patch: Partial<PlayerState>) => {
     if (!run) return;
-    const players = run.players.slice() as [PlayerState, PlayerState];
+    const players = run.players.slice();
     players[run.me] = { ...players[run.me], ...patch };
     setRun({ ...run, players });
   };
@@ -173,10 +213,10 @@ export function ProgressionPage() {
     body = (
       <SetupScreen
         data={data}
-        onStart={(settings, names) => {
-          const next = createRun(settings, names);
+        onStart={(settings, names, kinds, seats) => {
+          const next = createRun(settings, names, kinds);
           setRun(next);
-          if (settings.mode === "friend" && room.room?.role === "host") room.send({ k: "run", run: next });
+          if (settings.mode === "friend" && room.room?.role === "host") room.send({ k: "run", run: next, seats });
           else if (settings.mode === "friend") setSheet("share");
         }}
         onLoad={() => setSheet("save")}
@@ -190,7 +230,7 @@ export function ProgressionPage() {
     body = (
       <div className="pf-stage">
         <div className="pf-eyebrow">Block {run.block + 1} of {blocks.length}</div>
-        <h1 className="pf-title">The boosters of {yearsLabel(blockYears(run))}</h1>
+        <h1 className="pf-title">The boosters of {label}</h1>
         {busy || !packs ? (
           <Centered>
             <p className="pf-hint-pulse">{busy ?? "Preparing…"}</p>
@@ -198,7 +238,7 @@ export function ProgressionPage() {
           </Centered>
         ) : packs.length === 0 ? (
           <Centered>
-            <div className="pf-error">No playable boosters were found for these years.</div>
+            <div className="pf-error">No playable boosters were found for this block.</div>
             <div className="pf-row">
               <button type="button" className="pf-btn" onClick={() => setRun(applySealed(data, run, []))}>
                 Continue without packs
@@ -219,7 +259,7 @@ export function ProgressionPage() {
   } else if (run.phase === "pool" && me) {
     body = (
       <div className="pf-stage">
-        <div className="pf-eyebrow">Block {run.block + 1} · {yearsLabel(blockYears(run))}</div>
+        <div className="pf-eyebrow">Block {run.block + 1} · {label}</div>
         <h1 className="pf-title">Your sealed pool</h1>
         <p className="pf-sub">
           {me.opened.length} new cards{run.cumulative && (me.pool?.length ?? 0) > me.opened.length ? ` · ${me.pool?.length} in your collection` : ""}. Take a look, then build your deck.
@@ -237,7 +277,7 @@ export function ProgressionPage() {
       <ForgeDeckBuilder
         data={data}
         player={me}
-        title={`${me.name} · ${yearsLabel(blockYears(run))}`}
+        title={`${me.name} · ${label}`}
         onChange={(main: number[], basics: Basics) => updateMe({ main, basics })}
         actions={
           <>
@@ -262,7 +302,7 @@ export function ProgressionPage() {
                   say(`Limited decks need at least 40 cards — you have ${n}. Add cards or basic lands.`);
                   return;
                 }
-                const players = run.players.slice() as [PlayerState, PlayerState];
+                const players = run.players.slice();
                 players[run.me] = { ...me, ready: true };
                 setRun({ ...run, players, phase: "match" });
               }}
@@ -273,33 +313,24 @@ export function ProgressionPage() {
         }
       />
     );
-  } else if (run.phase === "match" && me && opp) {
-    body = (
-      <MatchStep
-        run={run}
-        data={data}
-        setRun={setRun}
-        onError={setError}
-        navigate={navigate}
-        room={room}
-      />
-    );
-  } else if (run.phase === "reward" && me && opp) {
+  } else if (run.phase === "match" && me) {
+    body = <MatchStep run={run} data={data} setRun={setRun} onError={setError} navigate={navigate} room={room} />;
+  } else if (run.phase === "reward" && me) {
     body = <RewardStep run={run} data={data} setRun={setRun} />;
   } else if (run.phase === "timeline") {
     const last = run.block + 1 >= blocks.length;
     body = (
       <div className="pf-stage">
         <div className="pf-eyebrow">{last ? "The end of the road" : "Time moves on"}</div>
-        <Timeline blocks={blocks} from={run.block} to={last ? run.block : run.block + 1} />
+        <Timeline blocks={blocks} labels={blockTags(run)} from={run.block} to={last ? run.block : run.block + 1} />
         <div className="pf-row">
           <button type="button" className="pf-btn" onClick={() => setRun(advanceBlock(run))}>
-            {last ? "See the final standings ▸" : `Open the boosters of ${yearsLabel(blocks[run.block + 1])} ▸`}
+            {last ? "See the final standings ▸" : `Open the boosters of ${blockLabel(run, run.block + 1)} ▸`}
           </button>
         </div>
       </div>
     );
-  } else if (run.phase === "done" && me && opp) {
+  } else if (run.phase === "done" && me) {
     body = <FinalScreen run={run} onNew={() => setRun(null)} onCopy={() => void navigator.clipboard?.writeText(exportList(me)).then(() => say("Deck list copied"))} />;
   } else {
     body = <Centered><p className="pf-hint">Nothing to show.</p></Centered>;
@@ -318,7 +349,7 @@ export function ProgressionPage() {
         {run && (
           <div className="pf-record">
             {run.players.map((p, i) => (
-              <div key={i} className={`pf-rec${i === run.me ? " me" : ""}`} title={i === run.me ? "You" : p.kind === "ai" ? "AI" : "Opponent"}>
+              <div key={i} className={`pf-rec${i === run.me ? " me" : ""}`} title={i === run.me ? "You" : p.kind === "ai" ? "AI" : sameSide(run, i, run.me) ? "Teammate" : "Opponent"}>
                 <b>{p.name}</b>
                 <i>
                   {p.wins}–{p.losses}
@@ -329,7 +360,7 @@ export function ProgressionPage() {
         )}
         {run && run.phase !== "done" && (
           <div className="pf-block">
-            Block <b>{run.block + 1}</b>/{blocks.length} · <b>{yearsLabel(blockYears(run))}</b>
+            Block <b>{run.block + 1}</b>/{blocks.length} · <b>{label}</b>
           </div>
         )}
         <button type="button" className="pf-btn-mini" style={run ? undefined : { marginLeft: "auto" }} onClick={() => setSheet("save")}>
@@ -346,7 +377,7 @@ export function ProgressionPage() {
         )}
         {run && run.mode === "friend" && room.room && run.phase !== "done" && (
           <div className="pf-stage" style={{ paddingBottom: 0, paddingTop: "0.6rem" }}>
-            <RoomPanel state={room} mode="progression" peerLabel={run.players[1 - run.me].name} />
+            <RoomPanel state={room} mode="progression" peerLabel={othersOf(run).filter((x) => x.p.kind === "human").map((x) => x.p.name).join(", ") || "your friends"} />
           </div>
         )}
         {body}
@@ -368,7 +399,7 @@ export function ProgressionPage() {
           onImportList={(slot, text) => {
             if (!run || !data) return;
             const res = importList(text, data);
-            const players = run.players.slice() as [PlayerState, PlayerState];
+            const players = run.players.slice();
             players[slot] = { ...players[slot], pool: res.pool, main: res.main, basics: res.basics };
             setRun({ ...run, players });
             say(`List imported: ${res.pool.length} cards${res.unknown.length ? ` (${res.unknown.length} unknown skipped)` : ""}`);
@@ -380,7 +411,7 @@ export function ProgressionPage() {
         <WhoSheet
           run={whoFor}
           onPick={(slot) => {
-            const players = whoFor.players.slice() as [PlayerState, PlayerState];
+            const players = whoFor.players.slice();
             if (!players[slot].pool) players[slot] = { ...players[slot], pool: [] };
             const next = { ...whoFor, me: slot, players, pendingGameId: null };
             setWhoFor(null);
@@ -404,6 +435,78 @@ function Centered({ children }: { children: ReactNode }) {
 
 // ── setup ───────────────────────────────────────────────────────────────────
 
+/** Search the booster sets of the index and pick them in play order. */
+function SetPicker({ data, value, onChange }: { data: ProgData; value: PackSetRef[]; onChange: (v: PackSetRef[]) => void }) {
+  const [query, setQuery] = useState("");
+  const all = useMemo(
+    () =>
+      data.sets
+        .filter((s) => (data.printsBySet.get(s.idx)?.length ?? 0) >= 8)
+        .slice()
+        .sort((a, b) => a.released.localeCompare(b.released)),
+    [data],
+  );
+  const chosen = new Set(value.map((v) => v.code));
+  const q = query.trim().toLowerCase();
+  const shown = all.filter((s) => !chosen.has(s.code) && (!q || `${s.name} ${s.code} ${s.year}`.toLowerCase().includes(q))).slice(0, 80);
+  const ref = (s: (typeof all)[number]): PackSetRef => ({ code: s.code, name: s.name, year: s.year });
+  return (
+    <div className="pf-setpick">
+      <div className="pf-setpick-chosen">
+        {value.length ? (
+          value.map((v, i) => (
+            <span key={v.code} className="pf-setchip">
+              <small>{i + 1}</small> {v.name} <i>{v.year}</i>
+              <button type="button" aria-label={`Remove ${v.name}`} onClick={() => onChange(value.filter((x) => x.code !== v.code))}>
+                ×
+              </button>
+            </span>
+          ))
+        ) : (
+          <span className="pf-hint">No set chosen yet: search below and click the boosters you want, in the order you want to open them.</span>
+        )}
+      </div>
+      <div className="pf-row" style={{ justifyContent: "flex-start", gap: "0.4rem", margin: "0.4rem 0" }}>
+        <input placeholder="Search a set (name, code, year)…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ flex: "1 1 180px" }} />
+        <button type="button" className="pf-btn-mini" disabled={value.length < 2} onClick={() => onChange(value.slice().sort((a, b) => a.year - b.year || a.name.localeCompare(b.name)))}>
+          By date
+        </button>
+        <button type="button" className="pf-btn-mini" disabled={value.length < 2} onClick={() => onChange(value.map((v) => [Math.random(), v] as const).sort((a, b) => a[0] - b[0]).map(([, v]) => v))}>
+          Shuffle
+        </button>
+        <button
+          type="button"
+          className="pf-btn-mini"
+          onClick={() => {
+            const pool = all.filter((s) => !chosen.has(s.code));
+            const add: PackSetRef[] = [];
+            while (add.length < 4 && pool.length) add.push(ref(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]));
+            onChange([...value, ...add]);
+          }}
+        >
+          + 4 random
+        </button>
+        {value.length > 0 && (
+          <button type="button" className="pf-btn-mini" onClick={() => onChange([])}>
+            Clear
+          </button>
+        )}
+      </div>
+      <div className="pf-setpick-list">
+        {shown.map((s) => (
+          <button key={s.code} type="button" onClick={() => onChange([...value, ref(s)])}>
+            <b>{s.name}</b>
+            <small>
+              {s.code.toUpperCase()} · {s.year}
+            </small>
+          </button>
+        ))}
+        {!shown.length && <p className="pf-hint">No set matches.</p>}
+      </div>
+    </div>
+  );
+}
+
 function SetupScreen({
   data,
   onStart,
@@ -412,15 +515,16 @@ function SetupScreen({
   onMe,
 }: {
   data: ProgData | null;
-  onStart: (s: RunSettings, names: [string, string]) => void;
+  onStart: (s: RunSettings, names: string[], kinds: ("human" | "ai")[], seats: Record<string, number>) => void;
   onLoad: () => void;
-  room: RoomState;
+  room: HubState;
   onMe: (me: RoomMe | null) => void;
 }) {
   const [s, setS] = useState(loadSettings);
   const inRoom = s.mode === "friend" && !!room.room;
   const guestWaiting = inRoom && room.room?.role === "guest";
-  const peerName = room.peer?.name?.trim() || (guestWaiting ? "Host" : "Friend");
+  const hostName = room.players.find((p) => p.id === "host")?.name?.trim() || "Host";
+  const friendsIn = room.players.filter((p) => p.id !== "host");
   const linked = room.status === "connected";
   useEffect(() => {
     onMe(inRoom ? { name: s.names[0].trim() || "Player" } : null);
@@ -428,8 +532,26 @@ function SetupScreen({
   const first = data?.firstYear ?? 1993;
   const last = Math.min(data?.lastYear ?? THIS_YEAR, THIS_YEAR);
   const years = useMemo(() => Array.from({ length: last - first + 1 }, (_, i) => first + i), [first, last]);
-  const blocks = blocksOf(s);
-  const set = (patch: Partial<typeof s>) => setS((cur) => ({ ...cur, ...patch }));
+  const set = (patch: Partial<ProgSetup>) => setS((cur) => ({ ...cur, ...patch }));
+  const effective: RunSettings = { ...s, packSets: s.packMode === "sets" ? s.packSets : undefined, teams: s.players === 4 && !!s.teams };
+  const blocks = blocksOf(effective);
+  const tags = blockTags(effective);
+  const bestOf = s.bestOf ?? 3;
+
+  // The table: me, then seats 2..players (vs AI all AIs; online a friend or an AI each).
+  const seatKinds: SeatKind[] = s.seatKinds.slice(0, s.players - 1).map((k) => (s.mode === "ai" ? "ai" : k));
+  const friendSeats = seatKinds.filter((k) => k === "friend").length;
+  const aiName = (n: number) => {
+    const base = s.names[1].trim() || "Forge AI";
+    return n === 0 ? base : `${base} ${n + 1}`;
+  };
+  const seatName = (i: number) => {
+    if (seatKinds[i] === "ai") return aiName(seatKinds.slice(0, i).filter((k) => k === "ai").length);
+    const friend = friendsIn[seatKinds.slice(0, i).filter((k) => k === "friend").length];
+    return friend?.name?.trim() || `Friend ${i + 1}`;
+  };
+  const roomReady = !inRoom || (linked && friendsIn.length >= friendSeats);
+  const canStart = blocks.length > 0 && (s.mode === "ai" || roomReady);
 
   const start = () => {
     try {
@@ -437,8 +559,20 @@ function SetupScreen({
     } catch {
       // ignore
     }
-    const { names, ...settings } = s;
-    onStart(settings, [names[0].trim() || "Player 1", inRoom ? peerName : names[1].trim() || (s.mode === "ai" ? "Forge AI" : "Player 2")]);
+    const { names: _n, players: _p, seatKinds: _k, packMode: _m, ...settings } = s;
+    const runSettings: RunSettings = { ...settings, packSets: effective.packSets, teams: effective.teams, bestOf };
+    const names = [s.names[0].trim() || "Player 1", ...seatKinds.map((_, i) => seatName(i))];
+    const kinds: ("human" | "ai")[] = ["human", ...seatKinds.map((k) => (k === "ai" ? ("ai" as const) : ("human" as const)))];
+    // Friends in the order they joined the room take the friend seats in order.
+    const seats: Record<string, number> = {};
+    let f = 0;
+    seatKinds.forEach((k, i) => {
+      if (k !== "friend") return;
+      const friend = friendsIn[f++];
+      if (friend) seats[friend.id] = i + 1;
+    });
+    // A run with no friend seat is a run vs AI (it needs no room).
+    onStart({ ...runSettings, mode: friendSeats ? "friend" : "ai" }, names, kinds, seats);
   };
 
   return (
@@ -446,150 +580,267 @@ function SetupScreen({
       <div className="pf-eyebrow">Pay the 1 pt1</div>
       <h1 className="pf-title">Progression</h1>
       <p className="pf-sub">
-        Travel through Magic's history one block of years at a time. Open sealed boosters printed in those years, build a deck, play a best of three.
-        The loser opens three cards from The List; the winner spins the Wheel of Fortune.
+        Travel through Magic's history one block at a time. Open sealed boosters, build a deck, play a best of {bestOf} at a table of 2 to 4. The losers open three cards
+        from The List; the winner spins the Wheel of Fortune.
       </p>
       {s.mode === "friend" && (
         <RoomPanel
           state={room}
           mode="progression"
-          hint={!room.room ? undefined : guestWaiting ? "The host chooses the years and the rules: the run starts here when they press Start." : "Choose the years and the rules, then start: the run opens on both devices."}
+          peerLabel={friendsIn.map((p) => p.name).join(", ") || "your friends"}
+          hint={
+            !room.room
+              ? undefined
+              : guestWaiting
+                ? "The host chooses the boosters, the table and the rules: the run starts here when they press Start."
+                : `Choose the boosters, the table and the rules, then start: the run opens on every device. ${friendsIn.length} friend${friendsIn.length === 1 ? "" : "s"} in the room.`
+          }
         />
       )}
       {guestWaiting ? (
         <div className="pf-panel" style={{ maxWidth: 520, margin: "0 auto" }}>
           <div className="pf-seg" style={{ marginBottom: "0.8rem" }}>
-            <button type="button" onClick={() => set({ mode: "ai", names: [s.names[0], "Forge AI"] })}>
+            <button type="button" onClick={() => set({ mode: "ai" })}>
               Vs AI
             </button>
             <button type="button" className="sel">
-              Vs a friend (online)
+              Vs friends (online)
             </button>
           </div>
           <label className="pf-field">
             <span>Your name</span>
             <input value={s.names[0]} maxLength={24} onChange={(e) => set({ names: [e.target.value, s.names[1]] })} />
           </label>
-          <p className="pf-hint-pulse" style={{ marginTop: "0.8rem" }}>Waiting for {peerName} to start…</p>
+          <div className="pf-hub-list" style={{ marginTop: "0.8rem" }}>
+            {room.players.map((p) => (
+              <div key={p.id}>
+                <span className="pf-room-dot on" />
+                <span>
+                  {p.name}
+                  {p.id === "host" ? " (host)" : p.id === room.myId ? " (you)" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="pf-hint-pulse" style={{ marginTop: "0.8rem" }}>Waiting for {hostName} to start…</p>
         </div>
       ) : (
-      <div className="pf-grid2">
-        <div className="pf-panel">
-          <div className="pf-field">
-            <span>Opponent</span>
-            <div className="pf-seg">
-              <button type="button" className={s.mode === "ai" ? "sel" : ""} onClick={() => set({ mode: "ai", names: [s.names[0], s.names[1] === "Player 2" ? "Forge AI" : s.names[1]] })}>
-                Vs AI
-              </button>
-              <button type="button" className={s.mode === "friend" ? "sel" : ""} onClick={() => set({ mode: "friend", names: [s.names[0], s.names[1] === "Forge AI" ? "Player 2" : s.names[1]] })}>
-                Vs a friend (online)
-              </button>
+        <div className="pf-grid2">
+          <div className="pf-panel">
+            <div className="pf-field">
+              <span>Opponents</span>
+              <div className="pf-seg">
+                <button type="button" className={s.mode === "ai" ? "sel" : ""} onClick={() => set({ mode: "ai" })}>
+                  Vs AI
+                </button>
+                <button type="button" className={s.mode === "friend" ? "sel" : ""} onClick={() => set({ mode: "friend" })}>
+                  Vs friends (online)
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="pf-fields" style={{ marginTop: "1rem" }}>
-            <label className="pf-field">
-              <span>Your name</span>
-              <input value={s.names[0]} maxLength={24} onChange={(e) => set({ names: [e.target.value, s.names[1]] })} />
-            </label>
-            {!inRoom && (
+            <div className="pf-fields" style={{ marginTop: "1rem" }}>
               <label className="pf-field">
-                <span>{s.mode === "ai" ? "AI name" : "Friend's name"}</span>
-                <input value={s.names[1]} maxLength={24} onChange={(e) => set({ names: [s.names[0], e.target.value] })} />
+                <span>Your name</span>
+                <input value={s.names[0]} maxLength={24} onChange={(e) => set({ names: [e.target.value, s.names[1]] })} />
               </label>
-            )}
-            {s.mode === "ai" && (
               <label className="pf-field">
-                <span>AI difficulty</span>
-                <select value={s.difficulty} onChange={(e) => set({ difficulty: e.target.value })}>
-                  {AI_DIFFICULTIES.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.id.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                <span>Players</span>
+                <select value={s.players} onChange={(e) => set({ players: Number(e.target.value) })}>
+                  {[2, 3, 4].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
                     </option>
                   ))}
                 </select>
               </label>
+              <label className="pf-field">
+                <span>Games per block</span>
+                <select value={bestOf} onChange={(e) => set({ bestOf: Number(e.target.value) })}>
+                  {[1, 3, 5].map((n) => (
+                    <option key={n} value={n}>
+                      Best of {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {(s.mode === "ai" || seatKinds.includes("ai")) && (
+                <>
+                  <label className="pf-field">
+                    <span>AI name</span>
+                    <input value={s.names[1]} maxLength={24} onChange={(e) => set({ names: [s.names[0], e.target.value] })} />
+                  </label>
+                  <label className="pf-field">
+                    <span>AI difficulty</span>
+                    <select value={s.difficulty} onChange={(e) => set({ difficulty: e.target.value })}>
+                      {AI_DIFFICULTIES.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.id.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
+              <label className="pf-field">
+                <span>Starting life</span>
+                <input type="number" min={1} max={999} placeholder={effective.teams ? "30 per team" : "20"} value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
+              </label>
+            </div>
+            {s.players === 4 && (
+              <div className="pf-field" style={{ marginTop: "0.9rem" }}>
+                <span>Table of 4</span>
+                <div className="pf-seg">
+                  <button type="button" className={!s.teams ? "sel" : ""} onClick={() => set({ teams: false })}>
+                    Free for all
+                  </button>
+                  <button type="button" className={s.teams ? "sel" : ""} onClick={() => set({ teams: true })}>
+                    Teams 2 vs 2
+                  </button>
+                </div>
+              </div>
             )}
-            <label className="pf-field">
-              <span>Starting life</span>
-              <input type="number" min={1} max={999} placeholder="20" value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
-            </label>
-          </div>
-          {s.mode === "friend" && !inRoom && (
-            <p className="pf-hint" style={{ marginTop: "0.9rem" }}>
-              You get a run code to send to your friend: they open Progression, Save / Load → Load, and pick their name. Each of you opens your own packs on your own device;
-              matches use a room code like the Test match.
-            </p>
-          )}
-        </div>
-        <div className="pf-panel">
-          <div className="pf-fields">
-            <label className="pf-field">
-              <span>From year</span>
-              <select value={s.startYear} onChange={(e) => { const v = Number(e.target.value); set({ startYear: v, endYear: Math.max(v, s.endYear) }); }}>
-                {years.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </label>
-            <label className="pf-field">
-              <span>To year</span>
-              <select value={s.endYear} onChange={(e) => set({ endYear: Number(e.target.value) })}>
-                {years.filter((y) => y >= s.startYear).map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </label>
-            <label className="pf-field">
-              <span>Years per block</span>
-              <select value={s.blockSize} onChange={(e) => set({ blockSize: Number(e.target.value) })}>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </label>
-            <label className="pf-field">
-              <span>Packs per sealed</span>
-              <select value={s.packs} onChange={(e) => set({ packs: Number(e.target.value) })}>
-                {[3, 4, 5, 6, 7, 8, 10, 12].map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <label className="pf-check">
-            <input type="checkbox" checked={s.cumulative} onChange={(e) => set({ cumulative: e.target.checked })} />
-            <span>
-              Keep your collection between blocks
-              <small>Off = every block starts from a fresh sealed pool (rewards are lost too).</small>
-            </span>
-          </label>
-          <label className="pf-check">
-            <input type="checkbox" checked={s.allowPartial} onChange={(e) => set({ allowPartial: e.target.checked })} />
-            <span>
-              Include partially implemented cards
-              <small>Off = only cards the rules engine fully supports appear in packs and rewards.</small>
-            </span>
-          </label>
-          <div className="pf-summary">
-            <b>{blocks.length}</b> block{blocks.length === 1 ? "" : "s"} → <b>{blocks.length}</b> best-of-three match{blocks.length === 1 ? "" : "es"}
-            {blocks.length > 0 && (
-              <>
-                {" "}· {blocks.slice(0, 6).map(yearsLabel).join(", ")}
-                {blocks.length > 6 ? ", …" : ""}
-              </>
+            <div className="pf-seats" style={{ marginTop: "0.9rem" }}>
+              <div className="pf-seat">
+                <div className="pf-seat-head">
+                  <b>Seat 1 · you</b>
+                  {effective.teams && <span className="pf-hint">team A</span>}
+                </div>
+              </div>
+              {seatKinds.map((k, i) => (
+                <div key={i} className="pf-seat">
+                  <div className="pf-seat-head">
+                    <b>
+                      Seat {i + 2} · {seatName(i)}
+                    </b>
+                    {effective.teams && <span className="pf-hint">{i === 0 ? "team A · your teammate" : "team B"}</span>}
+                    {s.mode === "friend" && (
+                      <div className="pf-seg">
+                        <button type="button" className={k === "friend" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i ? "friend" : x)) })}>
+                          Friend
+                        </button>
+                        <button type="button" className={k === "ai" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i ? "ai" : x)) })}>
+                          AI
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {s.mode === "friend" && (
+              <p className="pf-hint" style={{ marginTop: "0.9rem" }}>
+                {inRoom
+                  ? friendsIn.length >= friendSeats
+                    ? "Everyone is in: friends take the friend seats in the order they joined."
+                    : `Waiting for ${friendSeats - friendsIn.length} more friend${friendSeats - friendsIn.length === 1 ? "" : "s"} to join the room…`
+                  : "Open a room above and give the code to your friends. Each of you opens your own packs on your own device; the AI seats play on yours."}
+              </p>
             )}
-            <br />
-            Early years use their original boosters (8- and 12-card packs, no mythics before 2008). Smaller packs are topped up so every sealed holds about {s.packs * 14} cards.
+          </div>
+          <div className="pf-panel">
+            <div className="pf-field">
+              <span>Boosters</span>
+              <div className="pf-seg">
+                <button type="button" className={s.packMode === "years" ? "sel" : ""} onClick={() => set({ packMode: "years" })}>
+                  By years
+                </button>
+                <button type="button" className={s.packMode === "sets" ? "sel" : ""} onClick={() => set({ packMode: "sets" })}>
+                  Choose the sets
+                </button>
+              </div>
+            </div>
+            <div className="pf-fields" style={{ marginTop: "0.8rem" }}>
+              {s.packMode === "years" && (
+                <>
+                  <label className="pf-field">
+                    <span>From year</span>
+                    <select
+                      value={s.startYear}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        set({ startYear: v, endYear: Math.max(v, s.endYear) });
+                      }}
+                    >
+                      {years.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="pf-field">
+                    <span>To year</span>
+                    <select value={s.endYear} onChange={(e) => set({ endYear: Number(e.target.value) })}>
+                      {years
+                        .filter((y) => y >= s.startYear)
+                        .map((y) => (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </>
+              )}
+              <label className="pf-field">
+                <span>{s.packMode === "years" ? "Years per block" : "Sets per block"}</span>
+                <select value={s.blockSize} onChange={(e) => set({ blockSize: Number(e.target.value) })}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="pf-field">
+                <span>Packs per sealed</span>
+                <select value={s.packs} onChange={(e) => set({ packs: Number(e.target.value) })}>
+                  {[3, 4, 5, 6, 7, 8, 10, 12].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {s.packMode === "sets" &&
+              (data ? <SetPicker data={data} value={s.packSets ?? []} onChange={(v) => set({ packSets: v })} /> : <p className="pf-hint-pulse">Loading the sets…</p>)}
+            <label className="pf-check">
+              <input type="checkbox" checked={s.cumulative} onChange={(e) => set({ cumulative: e.target.checked })} />
+              <span>
+                Keep your collection between blocks
+                <small>Off = every block starts from a fresh sealed pool (rewards are lost too).</small>
+              </span>
+            </label>
+            <label className="pf-check">
+              <input type="checkbox" checked={s.allowPartial} onChange={(e) => set({ allowPartial: e.target.checked })} />
+              <span>
+                Include partially implemented cards
+                <small>Off = only cards the rules engine fully supports appear in packs and rewards.</small>
+              </span>
+            </label>
+            <div className="pf-summary">
+              <b>{blocks.length}</b> block{blocks.length === 1 ? "" : "s"} → <b>{blocks.length}</b> best-of-{bestOf} series
+              {blocks.length > 0 && (
+                <>
+                  {" "}· {tags.slice(0, 6).join(", ")}
+                  {tags.length > 6 ? ", …" : ""}
+                </>
+              )}
+              <br />
+              {s.packMode === "years"
+                ? `Early years use their original boosters (8- and 12-card packs, no mythics before 2008). Smaller packs are topped up so every sealed holds about ${s.packs * 14} cards.`
+                : `Each block opens about ${s.packs * 14} cards from its set${s.blockSize > 1 ? "s" : ""}, with that set's own booster layout.`}
+            </div>
           </div>
         </div>
-      </div>
       )}
       <div className="pf-row">
         <button type="button" className="pf-btn secondary" onClick={onLoad}>
           Load a save code
         </button>
         {!guestWaiting && (
-          <button type="button" className="pf-btn" onClick={start} disabled={blocks.length === 0 || (inRoom && !linked)}>
+          <button type="button" className="pf-btn" onClick={start} disabled={!canStart}>
             Start the journey ▸
           </button>
         )}
@@ -652,21 +903,30 @@ function MatchStep({
   room: RoomState;
 }) {
   const me = run.players[run.me];
-  const opp = run.players[(1 - run.me) as Slot];
+  const others = othersOf(run);
   const hostingStatus = useMultiplayerStore((s) => s.hostingStatus);
   const hostGameCode = useMultiplayerStore((s) => s.hostGameCode);
   const cardStatus = useCardDataStore((s) => s.status);
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState(false);
-  const years = yearsLabel(blockYears(run));
-  // Vs a friend in a mode room: the game room opens and is joined by itself.
+  const label = blockLabel(run, run.block);
+  const bestOf = run.bestOf ?? 3;
+  const target = seriesTarget(run);
+  const series = run.players.map((_, i) => run.series?.[i] ?? 0);
+  const gameNo = series.reduce((a, b) => a + b, 0) + 1;
+  // The sides of the table (teams of two, or every player) with their games won.
+  const sides = [...new Set(run.players.map((_, i) => sideLead(run, i)))];
+  const scoreLine = sides.map((lead) => `${sideName(run, lead)} ${series[lead]}`).join(" · ");
+  // Vs friends in a mode room: the game room opens and is joined by itself; friends
+  // enter one after the other so that every device keeps its seat of the run.
   const [manualRoom, setManualRoom] = useState(false);
-  const cardsLoading = useCardDataStore((s) => s.status) === "loading";
+  const cardsLoading = cardStatus === "loading";
   const inRoom = run.mode === "friend" && !!room.room;
+  const friendOrder = run.players.slice(0, run.me).filter((p) => p.kind === "human").length;
   const auto = useAutoMatchRoom({
     state: room,
-    matchKey: `${run.id}:${run.block}`,
+    matchKey: `${run.id}:${run.block}:${gameNo}`,
     enabled: inRoom && !run.pendingResult && !manualRoom && !cardsLoading,
     host: async () => {
       setRun({ ...run, pendingGameId: "*" });
@@ -677,13 +937,14 @@ function MatchStep({
       await joinFriendMatch(run, data, code, crypto.randomUUID(), navigate);
     },
     onError: (e) => onError(e),
+    seat: run.me === 0 ? undefined : friendOrder,
   });
 
-  const claim = async (myWins: number, oppWins: number) => {
+  const claim = async (winner: Slot | null) => {
     setBusy(true);
     try {
       await prepareBlock(data, run);
-      setRun(applyResult(data, run, myWins, oppWins));
+      setRun(applyResult(data, run, winner));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -692,18 +953,25 @@ function MatchStep({
   };
 
   if (run.pendingResult) {
-    const { myWins, oppWins } = run.pendingResult;
-    const won = myWins > oppWins;
+    const winner = resultWinner(run);
+    const won = winner !== null && sameSide(run, winner, run.me);
+    const decides = winner !== null && series[sideLead(run, winner)] + 1 >= target;
+    const iTakeBlock = decides && won;
     return (
       <div className="pf-stage">
-        <div className="pf-eyebrow">Best of three · {years}</div>
+        <div className="pf-eyebrow">
+          Best of {bestOf} · {label} · game {gameNo}
+        </div>
         <div className={`pf-result ${won ? "win" : "loss"}`}>{won ? "Victory" : "Defeat"}</div>
-        <p className="pf-sub">
-          {me.name} {myWins} – {oppWins} {opp.name}
-        </p>
+        <p className="pf-sub">{winner === null ? "No winner." : `${sideName(run, winner)} won${bestOf > 1 ? " this game" : ""}.`}</p>
+        {bestOf > 1 && (
+          <p className="pf-hint" style={{ textAlign: "center" }}>
+            Before this game: {scoreLine} — first to {target}.
+          </p>
+        )}
         <div className="pf-row">
-          <button type="button" className="pf-btn" disabled={busy} onClick={() => void claim(myWins, oppWins)}>
-            {won ? "Spin the Wheel of Fortune ▸" : "Open three cards from The List ▸"}
+          <button type="button" className="pf-btn" disabled={busy} onClick={() => void claim(winner)}>
+            {!decides ? "Next game ▸" : iTakeBlock ? "Spin the Wheel of Fortune ▸" : "Open three cards from The List ▸"}
           </button>
         </div>
       </div>
@@ -727,30 +995,48 @@ function MatchStep({
 
   const loading = cardStatus === "loading";
   const myDeck = deckSize(me);
+  const firstFriend = others.find((x) => x.p.kind === "human")?.p.name ?? "your friends";
 
   return (
     <div className="pf-stage">
-      <div className="pf-eyebrow">Best of three · {years}</div>
+      <div className="pf-eyebrow">
+        Best of {bestOf} · {label}
+        {bestOf > 1 ? ` · game ${gameNo}` : ""}
+      </div>
       <h1 className="pf-title">To battle</h1>
       <div className="pf-panel" style={{ maxWidth: 760, margin: "0 auto" }}>
         <div className="pf-versus">
           <div className="side">
-            <b>{me.name}</b>
-            <span>{myDeck}-card deck · {me.wins}–{me.losses}</span>
+            <b>{run.teams && run.players.length === 4 ? sideName(run, run.me) : me.name}</b>
+            <span>
+              {myDeck}-card deck · {me.wins}–{me.losses}
+            </span>
           </div>
           <div className="x">VS</div>
           <div className="side">
-            <b>{opp.name}</b>
-            <span>
-              {opp.kind === "ai" ? `${deckSize(opp)}-card deck · ` : ""}
-              {opp.wins}–{opp.losses}
-            </span>
+            {others
+              .filter((x) => !sameSide(run, x.i, run.me))
+              .map((x) => (
+                <div key={x.i}>
+                  <b>{x.p.name}</b>
+                  <span>
+                    {" "}
+                    {x.p.kind === "ai" ? `AI · ${deckSize(x.p)} cards · ` : ""}
+                    {x.p.wins}–{x.p.losses}
+                  </span>
+                </div>
+              ))}
           </div>
         </div>
+        {bestOf > 1 && (
+          <p className="pf-hint" style={{ textAlign: "center", marginTop: "0.6rem" }}>
+            {scoreLine} — first to {target} takes the block.
+          </p>
+        )}
 
         {run.pendingGameId && hostingStatus === "idle" && !(inRoom && !manualRoom) && (
           <p className="pf-hint" style={{ textAlign: "center", marginTop: "1rem" }}>
-            A match was started but no final result came back. Play it again, or record the result by hand below.
+            A game was started but no final result came back. Play it again, or record the result by hand below.
           </p>
         )}
 
@@ -768,7 +1054,7 @@ function MatchStep({
                 void start(() => launchAiMatch({ ...run, pendingGameId: gameId }, data, gameId, navigate), gameId);
               }}
             >
-              {loading ? "Loading cards…" : "Start best of three ▸"}
+              {loading ? "Loading cards…" : bestOf > 1 ? `Start game ${gameNo} ▸` : "Start the game ▸"}
             </button>
           </div>
         ) : inRoom && !manualRoom ? (
@@ -776,7 +1062,7 @@ function MatchStep({
             <p className="pf-hint-pulse">{auto.waiting}</p>
             {room.room?.role === "host" ? (
               <div className="pf-row">
-                {auto.stuck && <span className="pf-hint">Your friend has not entered yet?</span>}
+                {auto.stuck && <span className="pf-hint">Someone has not entered yet?</span>}
                 <button type="button" className={auto.stuck ? "pf-btn small" : "pf-btn-mini"} onClick={auto.restart}>
                   ⟳ Open a new game room
                 </button>
@@ -806,35 +1092,43 @@ function MatchStep({
           </div>
         ) : (
           <div style={{ marginTop: "1.2rem", display: "grid", gap: "1.2rem", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
-            <div>
-              <div className="pf-field"><span>Host the room</span></div>
-              {hostingStatus !== "idle" ? (
-                <div style={{ textAlign: "center" }}>
-                  {hostGameCode ? (
-                    <>
-                      <button type="button" className="pf-code" title="Copy" onClick={() => void navigator.clipboard?.writeText(hostGameCode).catch(() => {})}>
-                        {hostGameCode}
-                      </button>
-                      <p className="pf-hint">Tell {opp.name} this code. The match starts as soon as they join.</p>
-                    </>
-                  ) : (
-                    <p className="pf-hint-pulse">Opening the room…</p>
-                  )}
-                  <button type="button" className="pf-btn secondary small" onClick={() => useMultiplayerStore.getState().cancelHosting()}>
-                    Cancel room
-                  </button>
-                </div>
-              ) : (
-                <div className="pf-row" style={{ justifyContent: "flex-start", marginTop: "0.6rem" }}>
-                  <button type="button" className="pf-btn" disabled={busy || loading} onClick={() => void start(() => hostFriendMatch(run, data), "*")}>
-                    Create room ▸
-                  </button>
-                </div>
-              )}
-            </div>
-            {hostingStatus === "idle" && (
+            {run.me === 0 && (
               <div>
-                <div className="pf-field"><span>Or join your friend's room</span></div>
+                <div className="pf-field">
+                  <span>Host the room</span>
+                </div>
+                {hostingStatus !== "idle" ? (
+                  <div style={{ textAlign: "center" }}>
+                    {hostGameCode ? (
+                      <>
+                        <button type="button" className="pf-code" title="Copy" onClick={() => void navigator.clipboard?.writeText(hostGameCode).catch(() => {})}>
+                          {hostGameCode}
+                        </button>
+                        <p className="pf-hint">
+                          Tell {firstFriend} this code{others.filter((x) => x.p.kind === "human").length > 1 ? " (friends enter in seat order)" : ""}. The game starts as soon as every seat is taken.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="pf-hint-pulse">Opening the room…</p>
+                    )}
+                    <button type="button" className="pf-btn secondary small" onClick={() => useMultiplayerStore.getState().cancelHosting()}>
+                      Cancel room
+                    </button>
+                  </div>
+                ) : (
+                  <div className="pf-row" style={{ justifyContent: "flex-start", marginTop: "0.6rem" }}>
+                    <button type="button" className="pf-btn" disabled={busy || loading} onClick={() => void start(() => hostFriendMatch(run, data), "*")}>
+                      Create room ▸
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {hostingStatus === "idle" && run.me !== 0 && (
+              <div>
+                <div className="pf-field">
+                  <span>Join the host's room</span>
+                </div>
                 <div className="pf-row" style={{ justifyContent: "flex-start", marginTop: "0.6rem" }}>
                   <input
                     value={joinCode}
@@ -850,7 +1144,7 @@ function MatchStep({
                     onClick={() => {
                       const code = parseRoomCode(joinCode);
                       if (!code) {
-                        onError("Enter the 5-character room code your friend sees.");
+                        onError("Enter the 5-character room code the host sees.");
                         return;
                       }
                       const gameId = crypto.randomUUID();
@@ -860,6 +1154,7 @@ function MatchStep({
                     Join ▸
                   </button>
                 </div>
+                {friendOrder > 1 && <p className="pf-hint">Join after the friends in the seats before yours, so that everyone keeps their seat.</p>}
               </div>
             )}
           </div>
@@ -872,9 +1167,9 @@ function MatchStep({
             </button>
           ) : (
             <div className="pf-row">
-              {([[2, 0], [2, 1], [1, 2], [0, 2]] as const).map(([a, b]) => (
-                <button key={`${a}${b}`} type="button" className={`pf-btn small ${a > b ? "" : "secondary"}`} disabled={busy} onClick={() => void claim(a, b)}>
-                  {a > b ? "I won" : "I lost"} {a}–{b}
+              {sides.map((lead) => (
+                <button key={lead} type="button" className={`pf-btn small ${sameSide(run, lead, run.me) ? "" : "secondary"}`} disabled={busy} onClick={() => void claim(lead)}>
+                  {sameSide(run, lead, run.me) ? (run.teams && run.players.length === 4 ? "We won" : "I won") : `${sideName(run, lead)} won`}
                 </button>
               ))}
             </div>
@@ -889,7 +1184,6 @@ function MatchStep({
 
 function RewardStep({ run, data, setRun }: { run: RunState; data: ProgData; setRun: (r: RunState) => void }) {
   const me = run.players[run.me];
-  const opp = run.players[(1 - run.me) as Slot];
   const r = me.reward;
   const [picked, setPicked] = useState<string | null>(null);
   const [flipped, setFlipped] = useState<Set<number>>(new Set());
@@ -909,11 +1203,16 @@ function RewardStep({ run, data, setRun }: { run: RunState; data: ProgData; setR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [broken]);
 
+  // What the AIs got (friends open theirs on their own devices).
   const oppNote = (() => {
-    const o = opp.reward;
-    if (!o || opp.kind !== "ai") return null;
-    if (o.kind === "list") return `${opp.name} opened ${o.list?.map((c) => c.n).join(", ")} from The List.`;
-    return `${opp.name} spun ${o.rarity ? RARITY_LABEL[o.rarity] : "the wheel"} and took a card.`;
+    const notes = othersOf(run)
+      .filter((x) => x.p.kind === "ai" && x.p.reward)
+      .map(({ p }) => {
+        const o = p.reward!;
+        if (o.kind === "list") return `${p.name} opened ${o.list?.map((c) => c.n).join(", ")} from The List.`;
+        return `${p.name} spun ${o.rarity ? RARITY_LABEL[o.rarity] : "the wheel"} and took a card.`;
+      });
+    return notes.length ? notes.join(" ") : null;
   })();
 
   if (broken) {
@@ -983,15 +1282,15 @@ function RewardStep({ run, data, setRun }: { run: RunState; data: ProgData; setR
   const choices = (r.choices ?? []).map((k) => data.byKey.get(k)).filter((p): p is ProgPrint => Boolean(p));
   return (
     <div className="pf-stage">
-      <div className="pf-eyebrow">Victory · {yearsLabel(blockYears(run))}</div>
+      <div className="pf-eyebrow">Victory · {blockLabel(run, run.block)}</div>
       <h1 className="pf-title">Wheel of Fortune</h1>
-      <p className="pf-sub">One slice for every rarity you opened this block. Wherever it stops, choose one card of that rarity out of 30 from these years.</p>
+      <p className="pf-sub">One slice for every rarity you opened this block. Wherever it stops, choose one card of that rarity out of 30 from this block's boosters.</p>
       <WheelOfFortune
         wheel={r.wheel ?? ["c", "u", "r"]}
         landing={r.rarity ?? "c"}
         spun={Boolean(r.spun)}
         onSpun={() => {
-          const players = run.players.slice() as [PlayerState, PlayerState];
+          const players = run.players.slice();
           players[run.me] = { ...me, reward: { ...r, spun: true } };
           setRun({ ...run, players });
         }}
@@ -1037,23 +1336,25 @@ function ZoomModal({ print, onClose }: { print: ProgPrint; onClose: () => void }
 // ── end of the run ──────────────────────────────────────────────────────────
 
 function FinalScreen({ run, onNew, onCopy }: { run: RunState; onNew: () => void; onCopy: () => void }) {
-  const [a, b] = run.players;
-  const champion = a.wins === b.wins ? null : a.wins > b.wins ? a : b;
+  // Standings by side (teams of two count together).
+  const sides = [...new Set(run.players.map((_, i) => sideLead(run, i)))]
+    .map((lead) => ({ lead, name: sideName(run, lead), wins: run.players[lead].wins, losses: run.players[lead].losses }))
+    .sort((a, b) => b.wins - a.wins || a.losses - b.losses);
+  const champion = sides.length > 1 && sides[0].wins > sides[1].wins ? sides[0] : null;
+  const many = sides.length > 2 || (run.teams && run.players.length === 4);
   return (
     <div className="pf-stage">
       <div className="pf-eyebrow">
-        {run.startYear}–{run.endYear} · {blocksOf(run).length} blocks
+        {runLabel(run)} · {blocksOf(run).length} blocks
       </div>
-      <h1 className="pf-title">{champion ? `${champion.name} conquers history` : "A perfectly even rivalry"}</h1>
-      <p className="pf-sub">
-        {a.name} {a.wins}–{a.losses} · {b.name} {b.wins}–{b.losses}
-      </p>
+      <h1 className="pf-title">{champion ? `${champion.name} conquer${many && run.teams ? "" : "s"} history` : "A perfectly even rivalry"}</h1>
+      <p className="pf-sub">{sides.map((x) => `${x.name} ${x.wins}–${x.losses}`).join(" · ")}</p>
       <div className="pf-panel" style={{ maxWidth: 760, margin: "0 auto" }}>
         <table className="pf-table">
           <thead>
             <tr>
               <th>Block</th>
-              <th>Years</th>
+              <th>{run.packSets?.length ? "Boosters" : "Years"}</th>
               <th>Winner</th>
               <th>Score</th>
             </tr>
@@ -1062,8 +1363,8 @@ function FinalScreen({ run, onNew, onCopy }: { run: RunState; onNew: () => void;
             {run.history.map((h) => (
               <tr key={h.block}>
                 <td>{h.block + 1}</td>
-                <td>{yearsLabel(h.years)}</td>
-                <td>{h.winner === null ? "—" : run.players[h.winner].name}</td>
+                <td>{run.packSets?.length ? blockLabel(run, h.block) : yearsLabel(h.years)}</td>
+                <td>{h.winner === null ? "—" : sideName(run, h.winner)}</td>
                 <td>{h.score}</td>
               </tr>
             ))}
@@ -1137,7 +1438,7 @@ function SaveSheet({
               <button type="button" className="pf-btn small" disabled={!code} onClick={() => copy(code, "Run code copied")}>
                 Copy run code
               </button>
-              <button type="button" className="pf-btn secondary small" disabled={!code} onClick={() => download(`progression-${run.startYear}-${run.endYear}-block${run.block + 1}.txt`, code)}>
+              <button type="button" className="pf-btn secondary small" disabled={!code} onClick={() => download(`progression-block${run.block + 1}.txt`, code)}>
                 Download .txt
               </button>
             </div>
@@ -1237,7 +1538,7 @@ function WhoSheet({ run, onPick, onCancel }: { run: RunState; onPick: (s: Slot) 
       <div className="pf-sheet" onClick={(e) => e.stopPropagation()}>
         <h2>Who are you?</h2>
         <p style={{ textAlign: "center" }}>
-          {yearsLabel([run.startYear, run.endYear])} · block {Math.min(run.block + 1, blocksOf(run).length)} of {blocksOf(run).length} · {run.mode === "ai" ? "vs AI" : "vs a friend"}. Pick the player whose cards you play on this device.
+          {runLabel(run)} · block {Math.min(run.block + 1, blocksOf(run).length)} of {blocksOf(run).length} · {run.players.length} players{run.mode === "ai" ? " (vs AI)" : ""}. Pick the player whose cards you play on this device.
         </p>
         <div className="pf-who">
           {run.players.map((p, i) => (

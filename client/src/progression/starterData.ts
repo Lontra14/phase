@@ -1,4 +1,5 @@
-// Starter mode: the 60-card precon index (scripts/gen-starter-decks.mjs).
+// Starter mode: the precon index (scripts/gen-starter-decks.mjs): 60-card
+// precons and the official Commander precons (commander rows apart).
 // Deck cards keep their exact printing; they are registered in the Progression
 // index under `sd:<set>:<number>` keys so the deck builder, wheel and art pins
 // treat them like any other owned card.
@@ -24,8 +25,10 @@ export interface StarterDeck {
   /** A list the player imported (deckImport.ts): its cards as owned copies (keys may be `name:` for cards outside the index). */
   custom?: boolean;
   owned?: Owned[];
-  /** Imported commander decks. */
+  /** Commander decks (official precons and imported lists): the commander(s). */
   commanders?: string[];
+  /** Commander precons: the printing of each commander (its art in the match). */
+  commanderKeys?: string[];
   commanderFormat?: "Commander";
   /** Imported lists: cards the rules engine only partly implements. */
   partial?: string[];
@@ -33,7 +36,7 @@ export interface StarterDeck {
 
 interface RawFile {
   v: number;
-  decks: { id: string; code: string; name: string; type: string; date: string; cards: RawCard[] }[];
+  decks: { id: string; code: string; name: string; type: string; date: string; cards: RawCard[]; commander?: RawCard[] }[];
 }
 
 let decksPromise: Promise<StarterDeck[]> | null = null;
@@ -85,36 +88,55 @@ function cardFor(data: ProgData, raw: RawCard): ProgCard {
   return card;
 }
 
+function printFor(data: ProgData, raw: RawCard, date: string): ProgPrint {
+  const [, , setCode, number, id, rarity] = raw;
+  const key = `sd:${setCode}:${number}`;
+  let print = data.byKey.get(key);
+  if (!print) {
+    const card = cardFor(data, raw);
+    const r: Rarity = isMainRarity(rarity) ? rarity : usualRarity(data.byName.get(card.name));
+    print = { key, card, set: setFor(data, setCode, date), cn: number, rarity: r, id };
+    data.byKey.set(key, print);
+  }
+  return print;
+}
+
 function buildDeck(data: ProgData, d: RawFile["decks"][number]): StarterDeck {
   const cards: { key: string; count: number }[] = [];
   const prints: ProgPrint[] = [];
   for (const raw of d.cards) {
-    const [, count, setCode, number, id, rarity] = raw;
-    const key = `sd:${setCode}:${number}`;
-    let print = data.byKey.get(key);
-    if (!print) {
-      const card = cardFor(data, raw);
-      const r: Rarity = isMainRarity(rarity) ? rarity : usualRarity(data.byName.get(card.name));
-      print = { key, card, set: setFor(data, setCode, d.date), cn: number, rarity: r, id };
-      data.byKey.set(key, print);
-    }
+    const print = printFor(data, raw, d.date);
     prints.push(print);
-    cards.push({ key, count });
+    cards.push({ key: print.key, count: raw[1] });
   }
+  // Commander precons: the commander(s) stay out of the deck (command zone).
+  const commanders = (d.commander ?? []).map((raw) => printFor(data, raw, d.date));
   const colorCount: Record<string, number> = {};
   for (const p of prints) if (!isLandCard(p.card)) for (const c of colorsOf(p.card)) colorCount[c] = (colorCount[c] ?? 0) + 1;
-  const colors = Object.keys(colorCount)
-    .filter((c) => colorCount[c] >= 2)
-    .sort((a, b) => "WUBRG".indexOf(a) - "WUBRG".indexOf(b));
+  // A commander deck's colours are its commanders' colour identity.
+  const identity = new Set(commanders.flatMap((p) => [...(p.card.identity || p.card.colors || "")]).filter((c) => "WUBRG".includes(c)));
+  const colors = (commanders.length ? [...identity] : Object.keys(colorCount).filter((c) => colorCount[c] >= 2)).sort((a, b) => "WUBRG".indexOf(a) - "WUBRG".indexOf(b));
   const rank: Record<Rarity, number> = { m: 5, r: 4, s: 3, b: 3, u: 2, c: 1 };
   const face =
+    commanders[0] ??
     prints
       .filter((p) => !isLandCard(p.card))
       .sort((a, b) => {
         const pw = (p: ProgPrint) => (/Planeswalker/.test(p.card.type) ? 2 : /Legendary/.test(p.card.type) ? 1 : 0);
         return rank[b.rarity] - rank[a.rarity] || pw(b) - pw(a) || b.card.cmc - a.card.cmc;
       })[0] ?? prints[0] ?? null;
-  return { id: d.id, code: d.code, name: d.name, type: d.type, date: d.date, year: Number(d.date.slice(0, 4)) || 0, cards, colors, face };
+  return {
+    id: d.id,
+    code: d.code,
+    name: d.name,
+    type: d.type,
+    date: d.date,
+    year: Number(d.date.slice(0, 4)) || 0,
+    cards,
+    colors,
+    face,
+    ...(commanders.length ? { commanders: commanders.map((p) => p.card.name), commanderKeys: commanders.map((p) => p.key), commanderFormat: "Commander" as const } : {}),
+  };
 }
 
 /** The deck's 60 cards as owned copies (basic lands included). */

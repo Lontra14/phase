@@ -278,7 +278,12 @@ export class PackFactory {
 
   /** Booster sets of the block that have something playable in them. */
   setsFor(from: number, to: number): ProgSet[] {
-    return setsInYears(this.data, from, to).filter((s) => {
+    return this.openable(setsInYears(this.data, from, to));
+  }
+
+  /** The sets of a list that have something playable in them. */
+  openable(sets: ProgSet[]): ProgSet[] {
+    return sets.filter((s) => {
       const p = this.poolsFor(s);
       return p.c.length + p.u.length + p.r.length + p.m.length >= 8;
     });
@@ -289,7 +294,12 @@ export class PackFactory {
    * Eras with 8- or 12-card packs open more packs so the pool stays deck-buildable.
    */
   openSealed(from: number, to: number, packs: number, rng: Rng): Pack[] {
-    const sets = this.setsFor(from, to);
+    return this.openSealedFrom(setsInYears(this.data, from, to), packs, rng);
+  }
+
+  /** A sealed pool from the given sets (runs by set). */
+  openSealedFrom(all: ProgSet[], packs: number, rng: Rng): Pack[] {
+    const sets = this.openable(all);
     if (!sets.length) return [];
     const weights = sets.map((s) => {
       const p = this.poolsFor(s);
@@ -310,9 +320,14 @@ export class PackFactory {
 
   /** Every playable printing of the block's years with the given rarity, one per card name. */
   universe(from: number, to: number, rarity: Rarity): ProgPrint[] {
+    return this.universeOf(setsInYears(this.data, from, to), rarity);
+  }
+
+  /** Every playable printing of the given sets with the given rarity, one per card name. */
+  universeOf(sets: ProgSet[], rarity: Rarity): ProgPrint[] {
     const seen = new Set<string>();
     const out: ProgPrint[] = [];
-    for (const set of setsInYears(this.data, from, to)) {
+    for (const set of sets) {
       for (const p of this.poolsFor(set)[rarity]) {
         if (seen.has(p.card.name)) continue;
         seen.add(p.card.name);
@@ -324,8 +339,12 @@ export class PackFactory {
 
   /** Card names a block can produce, for the engine support check. */
   static namesForYears(data: ProgData, from: number, to: number): string[] {
+    return PackFactory.namesForSets(data, setsInYears(data, from, to));
+  }
+
+  static namesForSets(data: ProgData, sets: ProgSet[]): string[] {
     const names = new Set<string>();
-    for (const set of setsInYears(data, from, to)) {
+    for (const set of sets) {
       for (const p of data.printsBySet.get(set.idx) ?? []) names.add(p.card.name);
     }
     return [...names];

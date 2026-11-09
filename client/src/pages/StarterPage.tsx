@@ -1,12 +1,14 @@
-// Starter — Rogue Forge mode.
+// Starter — Pay the 1 pt1 mode.
 //
-// Both players pick a 60-card precon. A grid of boosters (any set, any product)
-// is at stake. Game 1 right away (look at your deck first), single games:
-// the loser picks a colour and gets a card from The List, the winner spins a
-// wheel of their deck's rarities and adds another copy of one card. Then the
-// winner opens a booster from the grid, the loser another, deck building, next
-// game. When the grid is empty a last game decides. Game 1 starts at random;
-// later games the loser chooses who starts.
+// Every player picks a precon (60-card decks, or official Commander precons with
+// Commander rules, or their own list). A grid of boosters (any set, any
+// product) is at stake. Tables of 2 to 4 (AIs and friends online; at 4,
+// everyone for themselves or two teams). Game 1 right away (look at your deck
+// first), single games: every loser picks a colour and gets a card from The
+// List, the winner spins a wheel of their deck's rarities and adds another copy
+// of one card. Then the winner opens a booster from the grid, then the others
+// in seat order after them, deck building, next game. When the grid is empty a
+// last game decides.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -27,7 +29,7 @@ import { deckSize, hostFriendMatchSpec, joinFriendMatchSpec, launchAiMatchSpec }
 import type { Pack } from "../progression/packs";
 import { PRODUCT_LABEL } from "../progression/packs";
 import type { Basics, PlayerState, Slot } from "../progression/run";
-import { exportList } from "../progression/run";
+import { exportList, sameSide, sideLead, sideName } from "../progression/run";
 import type { StarterRun, StarterSettings } from "../progression/starter";
 import {
   COLOR_LABEL,
@@ -46,11 +48,14 @@ import {
   opponentStandIn,
   packsLeft,
   starterFormat,
+  starterTableFormat,
+  starterTeams,
+  starterWinner,
   picker,
   takePack,
   totalGames,
 } from "../progression/starter";
-import type { LinkPeer, LinkState, LinkStatus, StarterLink } from "../progression/starterLink";
+import type { LinkPeer, LinkPick, LinkState, LinkStatus, StarterLink } from "../progression/starterLink";
 import { openStarterLink } from "../progression/starterLink";
 import type { StarterDeck } from "../progression/starterData";
 import { loadDeckWarnings, loadStarterDecks } from "../progression/starterData";
@@ -59,8 +64,10 @@ import { forMatch } from "../chess/chess";
 import { DeckImportPanel, importReady } from "../progression/DeckImportPanel";
 import type { ImportedDeck } from "../progression/deckImport";
 import { importedDeck, isCommanderDeck } from "../progression/deckImport";
-import type { RoomMe, RoomState } from "../progression/room";
-import { RoomPanel, RoomToasts, useAutoMatchRoom, useRoom } from "../progression/room";
+import type { RoomMe } from "../progression/room";
+import { RoomPanel, RoomToasts, useAutoMatchRoom } from "../progression/room";
+import type { HubPlayer, HubState } from "../progression/roomHub";
+import { useRoomHub } from "../progression/roomHub";
 
 const SETTINGS_KEY = "phase-starter-settings";
 /** Decks per gallery page. */
@@ -93,6 +100,15 @@ function Centered({ children }: { children: ReactNode }) {
   return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.8rem", padding: "3rem 1rem" }}>{children}</div>;
 }
 
+/** The players I face (everyone else at the table). */
+const othersOf = (run: StarterRun) => run.players.map((p, i) => ({ p, i })).filter((x) => x.i !== run.me);
+
+/** The run the host sent to the room, with the seat of every friend's device. */
+interface RoomRun {
+  run?: StarterRun;
+  seats?: Record<string, number>;
+}
+
 export function StarterPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -110,17 +126,20 @@ export function StarterPage() {
   const [sheet, setSheet] = useState<null | "save" | "share">(null);
   const [whoFor, setWhoFor] = useState<StarterRun | null>(null);
   const [listReady, setListReady] = useState(false);
-  // Vs a friend: the mode room (opened before choosing anything, kept for the whole run).
+  // Vs friends: the mode room (opened before choosing anything, kept for the whole run; up to 4 players).
   const [setupMe, setSetupMe] = useState<RoomMe | null>(null);
   const roomMe: RoomMe | null = run ? { name: run.players[run.me].name } : setupMe;
-  const room = useRoom("starter", roomMe);
-  const roomRun = (room.latest.run as { run?: StarterRun } | undefined)?.run;
+  const room = useRoomHub("starter", roomMe);
+  const roomRun = room.latest.run as RoomRun | undefined;
   useEffect(() => {
-    if (room.room?.role !== "guest" || !roomRun || typeof roomRun.id !== "string") return;
-    if (run && run.id === roomRun.id) return;
-    setRun({ ...roomRun, me: 1 as Slot, pendingGameId: null, pendingResult: null });
+    const r = roomRun?.run;
+    if (room.room?.role !== "guest" || !r || typeof r.id !== "string") return;
+    if (run && run.id === r.id) return;
+    const seat = roomRun?.seats?.[room.myId] ?? (r.players.length === 2 ? 1 : undefined);
+    if (seat === undefined || !r.players[seat]) return;
+    setRun({ ...r, me: seat as Slot, pendingGameId: null, pendingResult: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room.room?.role, roomRun]);
+  }, [room.room?.role, roomRun, room.myId]);
 
   const setRun = useCallback((next: StarterRun | null) => {
     setRunState(next);
@@ -163,13 +182,13 @@ export function StarterPage() {
   const me = run ? run.players[run.me] : null;
   const updateMe = (patch: Partial<PlayerState>) => {
     if (!run) return;
-    const players = run.players.slice() as [PlayerState, PlayerState];
+    const players = run.players.slice();
     players[run.me] = { ...players[run.me], ...patch };
     setRun({ ...run, players });
   };
 
   // Commander decks: 99 cards + the commander; imported lists shorter than 60 keep their own size.
-  const starterMin = me?.commander?.length ? 99 : Math.min(60, run?.startSize?.[run.me] ?? 60);
+  const starterMin = Math.min(me?.commander?.length ? 100 - me.commander.length : 60, run?.startSize?.[run.me] ?? 60);
   let body: ReactNode;
   if (!data || !decks) {
     body = <Centered>{loadError ? <div className="pf-error">Could not load the decks: {loadError}</div> : <p className="pf-hint-pulse">Loading the precons…</p>}</Centered>;
@@ -178,10 +197,10 @@ export function StarterPage() {
       <StarterSetup
         data={data}
         decks={decks}
-        onStart={(settings, names, chosen) => {
-          const next = createStarter(data, settings, names, chosen);
+        onStart={(settings, names, chosen, kinds, seats) => {
+          const next = createStarter(data, settings, names, chosen, kinds);
           setRun(next);
-          if (settings.mode === "friend" && room.room?.role === "host") room.send({ k: "run", run: next });
+          if (settings.mode === "friend" && room.room?.role === "host") room.send({ k: "run", run: next, seats });
           else if (settings.mode === "friend") setSheet("share");
         }}
         onLoad={() => setSheet("save")}
@@ -228,7 +247,7 @@ export function StarterPage() {
               onClick={() => {
                 const n = deckSize(me);
                 if (n < starterMin) {
-                  say(`${me.commander?.length ? "Commander decks need 99 cards plus the commander" : `Starter decks need at least ${starterMin} cards`} — you have ${n}.`);
+                  say(`${me.commander?.length ? `Commander decks need ${starterMin} cards plus the commander` : `Starter decks need at least ${starterMin} cards`} — you have ${n}.`);
                   return;
                 }
                 setRun({ ...run, phase: "match" });
@@ -251,7 +270,7 @@ export function StarterPage() {
       </Centered>
     );
   } else if (run.phase === "packs") {
-    body = <StarterPacks run={run} data={data} setRun={setRun} say={say} onError={setError} />;
+    body = <StarterPacks run={run} data={data} setRun={setRun} say={say} onError={setError} room={room} />;
   } else {
     body = <StarterEnd run={run} onNew={() => setRun(null)} />;
   }
@@ -297,7 +316,7 @@ export function StarterPage() {
         )}
         {run && run.mode === "friend" && room.room && run.phase !== "done" && (
           <div className="pf-stage" style={{ paddingBottom: 0, paddingTop: "0.6rem" }}>
-            <RoomPanel state={room} mode="starter" peerLabel={run.players[1 - run.me].name} />
+            <RoomPanel state={room} mode="starter" peerLabel={othersOf(run).filter((x) => x.p.kind === "human").map((x) => x.p.name).join(", ") || "your friends"} />
           </div>
         )}
         {body}
@@ -354,6 +373,8 @@ export function StarterPage() {
 
 // ── setup: deck gallery ─────────────────────────────────────────────────────
 
+// ── setup: deck gallery ─────────────────────────────────────────────────────
+
 function DeckTile({ deck, selected, warning, onClick }: { deck: StarterDeck; selected: boolean; warning: string[] | undefined; onClick: () => void }) {
   return (
     <button type="button" className={`pf-deck${selected ? " sel" : ""}`} onClick={onClick} title={warning?.length ? `May not work: ${warning.join(", ")}` : deck.name}>
@@ -373,6 +394,22 @@ function DeckTile({ deck, selected, warning, onClick }: { deck: StarterDeck; sel
   );
 }
 
+type SeatKind = "ai" | "friend";
+interface StarterSetupState extends StarterSettings {
+  names: [string, string];
+  players: number;
+  /** Seats 2..4 online: a friend or an AI. */
+  seatKinds: SeatKind[];
+  teams: boolean;
+}
+
+/** A friend's deck as their device announced it in the room. */
+function hubDeck(p: HubPlayer | undefined, decks: StarterDeck[]): StarterDeck | null {
+  if (!p?.deck) return null;
+  const custom = p.custom as StarterDeck | undefined;
+  return (custom && custom.id === p.deck ? custom : null) ?? decks.find((d) => d.id === p.deck) ?? null;
+}
+
 function StarterSetup({
   data,
   decks,
@@ -383,33 +420,36 @@ function StarterSetup({
 }: {
   data: ProgData;
   decks: StarterDeck[];
-  onStart: (s: StarterSettings, names: [string, string], chosen: [StarterDeck, StarterDeck]) => void;
+  onStart: (s: StarterSettings & { teams?: boolean }, names: string[], chosen: StarterDeck[], kinds: ("human" | "ai")[], seats: Record<string, number>) => void;
   onLoad: () => void;
-  room: RoomState;
+  room: HubState;
   onMe: (me: RoomMe | null) => void;
 }) {
   const saved = useMemo(() => {
     try {
-      return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") as Partial<StarterSettings & { names: [string, string] }>;
+      return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") as Partial<StarterSetupState & { commanderRules: boolean }>;
     } catch {
       return {};
     }
   }, []);
-  const [s, setS] = useState<StarterSettings & { names: [string, string] }>({
+  const [s, setS] = useState<StarterSetupState>({
     mode: saved.mode ?? "ai",
     difficulty: saved.difficulty ?? "Medium",
     startingLife: saved.startingLife ?? null,
     packs: saved.packs ?? 6,
     names: saved.names ?? ["Player", "Forge AI"],
+    players: saved.players ?? 2,
+    seatKinds: Array.isArray(saved.seatKinds) && saved.seatKinds.length >= 3 ? saved.seatKinds : ["friend", "friend", "friend"],
+    teams: !!saved.teams,
   });
-  const [chosen, setChosen] = useState<[StarterDeck | null, StarterDeck | null]>([null, null]);
-  const [slot, setSlot] = useState<0 | 1>(0);
+  const [chosen, setChosen] = useState<(StarterDeck | null)[]>([null, null, null, null]);
+  const [slot, setSlot] = useState(0);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
   const [color, setColor] = useState("");
   const [hideWarn, setHideWarn] = useState(false);
   const [source, setSource] = useState<"precon" | "list">("precon");
-  const [commanderRules, setCommanderRules] = useState<boolean>(() => !!(saved as { commanderRules?: boolean }).commanderRules);
+  const [commanderRules, setCommanderRules] = useState<boolean>(() => !!saved.commanderRules);
   const [imported, setImported] = useState<ImportedDeck | null>(null);
   const [warnings, setWarnings] = useState<Map<string, string[]>>(new Map());
   const [peek, setPeek] = useState<ProgPrint | null>(null);
@@ -418,18 +458,23 @@ function StarterSetup({
     void loadDeckWarnings().then(setWarnings);
   }, []);
 
-  const types = useMemo(() => [...new Set(decks.map((d) => d.type))].sort(), [decks]);
+  // Normal rules: the 60-card precons; Commander rules: the official Commander precons.
+  const pool = useMemo(() => decks.filter((d) => isCommanderDeck(d) === commanderRules), [decks, commanderRules]);
+  const types = useMemo(() => [...new Set(pool.map((d) => d.type))].sort(), [pool]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return decks
-      .filter((d) => (!q || d.name.toLowerCase().includes(q) || String(d.year).includes(q)) && (!type || d.type === type))
+    return pool
+      .filter((d) => (!q || d.name.toLowerCase().includes(q) || String(d.year).includes(q) || (d.commanders ?? []).some((c) => c.toLowerCase().includes(q))) && (!type || d.type === type))
       .filter((d) => !color || (color === "C" ? d.colors.length === 0 : d.colors.includes(color)))
-      .filter((d) => !hideWarn || !(warnings.get(d.id)?.length))
+      .filter((d) => !hideWarn || !warnings.get(d.id)?.length)
       .slice()
       .reverse();
-  }, [decks, query, type, color, hideWarn, warnings]);
+  }, [pool, query, type, color, hideWarn, warnings]);
+  useEffect(() => {
+    if (!pool.length) setSource("list");
+  }, [pool.length]);
   const [pageRaw, setPage] = useState(0);
-  useEffect(() => setPage(0), [query, type, color, hideWarn]);
+  useEffect(() => setPage(0), [query, type, color, hideWarn, commanderRules]);
   const pages = Math.max(1, Math.ceil(shown.length / PAGE));
   const page = Math.min(pageRaw, pages - 1);
   const goPage = (n: number) => {
@@ -437,50 +482,70 @@ function StarterSetup({
     document.querySelector(".pf-deckbar")?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
 
-  // Vs a friend in a room: each device picks its own deck (chosen[0] = mine).
+  // Online: each friend picks their own deck on their device; the host picks its own and the AIs'.
   const inRoom = s.mode === "friend" && !!room.room;
-  const mySeat: 0 | 1 = inRoom && room.room?.role === "guest" ? 1 : 0;
-  const peerCustom = room.peer?.custom as StarterDeck | undefined;
-  const peerDeck = inRoom && room.peer?.deck ? (peerCustom && peerCustom.id === room.peer.deck ? peerCustom : null) ?? decks.find((d) => d.id === room.peer!.deck) ?? null : null;
-  const peerName = room.peer?.name?.trim() || (mySeat === 0 ? "Friend" : "Host");
-  const view: [StarterDeck | null, StarterDeck | null] = !inRoom ? chosen : mySeat === 0 ? [chosen[0], peerDeck] : [peerDeck, chosen[0]];
-  const viewNames: [string, string] = !inRoom ? s.names : mySeat === 0 ? [s.names[0], peerName] : [peerName, s.names[0]];
+  const guestWaiting = inRoom && room.room?.role === "guest";
+  const friendsIn = room.players.filter((p) => p.id !== "host");
+  const hostName = room.players.find((p) => p.id === "host")?.name?.trim() || "Host";
+  const linked = room.status === "connected";
+  const players = guestWaiting ? 1 : s.players;
+  const teams = s.players === 4 && s.teams;
+  // Seat kinds: 0 = me; then AI, a friend in the room, or (no room) a friend whose deck I pick.
+  const kindAt = (i: number): "me" | "ai" | "friend" | "local" => {
+    if (i === 0) return "me";
+    if (s.mode === "ai") return "ai";
+    const k = s.seatKinds[i - 1] ?? "friend";
+    return k === "ai" ? "ai" : inRoom ? "friend" : "local";
+  };
+  const friendAt = (i: number) => friendsIn[Array.from({ length: i }, (_, j) => kindAt(j)).filter((k) => k === "friend").length];
+  const aiName = (n: number) => {
+    const base = s.names[1].trim() || "Forge AI";
+    return n === 0 ? base : `${base} ${n + 1}`;
+  };
+  const nameAt = (i: number): string => {
+    const k = kindAt(i);
+    if (k === "me") return s.names[0].trim() || "You";
+    if (k === "ai") return aiName(Array.from({ length: i }, (_, j) => kindAt(j)).filter((x) => x === "ai").length);
+    if (k === "friend") return friendAt(i)?.name?.trim() || `Friend ${i + 1}`;
+    return i === 1 ? s.names[1].trim() || "Player 2" : `Player ${i + 1}`;
+  };
+  const deckAt = (i: number): StarterDeck | null => (kindAt(i) === "friend" ? hubDeck(friendAt(i), decks) : chosen[i] ?? null);
+  const pickable = (i: number) => kindAt(i) !== "friend";
+  const seatsIdx = Array.from({ length: players }, (_, i) => i);
+  const friendSeats = seatsIdx.filter((i) => kindAt(i) === "friend").length;
+
   const myDeckId = chosen[0]?.id ?? null;
   useEffect(() => {
     onMe(inRoom ? { name: s.names[0].trim() || "Player", deck: myDeckId, ...(chosen[0]?.custom ? { custom: chosen[0] } : {}) } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inRoom, s.names, myDeckId, onMe]);
-  const linked = room.status === "connected";
-  const rulesOk = !commanderRules || (isCommanderDeck(view[0]) && isCommanderDeck(view[1]));
-  const canStart = rulesOk && (inRoom ? mySeat === 0 && !!chosen[0] && !!peerDeck && linked : !!chosen[0] && !!chosen[1]);
+  const rulesOk = !commanderRules || seatsIdx.every((i) => !deckAt(i) || isCommanderDeck(deckAt(i)));
+  const allDecks = seatsIdx.every((i) => !!deckAt(i));
+  const canStart = !guestWaiting && rulesOk && allDecks && (!inRoom || (linked && friendsIn.length >= friendSeats));
+
+  const nextSlot = (from: number, next: (StarterDeck | null)[]) => {
+    for (let k = 1; k <= players; k++) {
+      const i = (from + k) % players;
+      if (pickable(i) && !next[i]) return i;
+    }
+    return from;
+  };
+  const place = (d: StarterDeck) => {
+    const next = chosen.slice();
+    const at = guestWaiting ? 0 : pickable(slot) ? slot : 0;
+    next[at] = d;
+    setChosen(next);
+    if (!guestWaiting) setSlot(nextSlot(at, next));
+  };
   const useImported = () => {
     if (!imported || !importReady(imported, commanderRules)) return;
-    const d = importedDeck(imported, commanderRules);
-    const next = chosen.slice() as [StarterDeck | null, StarterDeck | null];
-    if (inRoom) next[0] = d;
-    else {
-      next[slot] = d;
-      if (slot === 0 && !next[1]) setSlot(1);
-    }
-    setChosen(next);
-  };
-  const guestWaiting = inRoom && mySeat === 1;
-
-  const pick = (d: StarterDeck) => {
-    const next = chosen.slice() as [StarterDeck | null, StarterDeck | null];
-    if (inRoom) {
-      next[0] = d;
-      setChosen(next);
-      return;
-    }
-    next[slot] = d;
-    setChosen(next);
-    if (slot === 0 && !next[1]) setSlot(1);
+    place(importedDeck(imported, commanderRules));
   };
   const random = () => {
-    const pool = shown.length ? shown : decks;
-    pick(pool[Math.floor(Math.random() * pool.length)]);
+    const list = shown.length ? shown : pool;
+    if (list.length) place(list[Math.floor(Math.random() * list.length)]);
   };
-  const set = (patch: Partial<typeof s>) => setS((cur) => ({ ...cur, ...patch }));
+  const set = (patch: Partial<StarterSetupState>) => setS((cur) => ({ ...cur, ...patch }));
   const start = () => {
     if (!canStart) return;
     try {
@@ -488,123 +553,199 @@ function StarterSetup({
     } catch {
       // ignore
     }
-    const { names, ...settings } = s;
-    if (inRoom) onStart(settings, [names[0].trim() || "Player 1", peerName], [chosen[0]!, peerDeck!]);
-    else onStart(settings, [names[0].trim() || "Player 1", names[1].trim() || (s.mode === "ai" ? "Forge AI" : "Player 2")], [chosen[0]!, chosen[1]!]);
+    const { names: _n, players: _p, seatKinds: _k, teams: _t, ...settings } = s;
+    const names = seatsIdx.map(nameAt);
+    const kinds = seatsIdx.map((i) => (kindAt(i) === "ai" ? ("ai" as const) : ("human" as const)));
+    const seats: Record<string, number> = {};
+    for (const i of seatsIdx) if (kindAt(i) === "friend" && friendAt(i)) seats[friendAt(i)!.id] = i;
+    // A table with no friend is a game vs AI (it needs no room).
+    const mode = kinds.some((k, i) => i > 0 && k === "human") ? "friend" : "ai";
+    onStart({ ...settings, mode, teams }, names, seatsIdx.map((i) => deckAt(i)!), kinds, seats);
   };
 
-  const slotLabel = (i: 0 | 1) => (inRoom ? viewNames[i] : i === 0 ? s.names[0] || "You" : s.names[1] || (s.mode === "ai" ? "Forge AI" : "Friend"));
+  const n = Math.max(2, s.players);
+  const packsRounded = Math.max(n, Math.round(s.packs / n) * n);
 
   return (
     <div className="pf-stage" style={{ maxWidth: 1320 }}>
       <div className="pf-eyebrow">Pay the 1 pt1</div>
       <h1 className="pf-title">Starter</h1>
       <p className="pf-sub">
-        Two precons, a pile of boosters at stake. After every game the winner opens a booster first, then the loser — until the pile is gone and one last game decides.
+        Precons and a pile of boosters at stake, for 2 to 4 players. After every game the winner opens a booster first, then the others in turn — until the pile is gone and
+        one last game decides.
       </p>
       {s.mode === "friend" && (
         <RoomPanel
           state={room}
           mode="starter"
+          peerLabel={friendsIn.map((p) => p.name).join(", ") || "your friends"}
           hint={
             !room.room
               ? undefined
-              : mySeat === 0
-                ? "You choose the boosters at stake; your friend picks their own precon on their device. Start when both are chosen."
-                : "The host chooses the boosters at stake. Pick your precon below: the run starts on both devices when the host presses Start."
+              : guestWaiting
+                ? "The host chooses the table and the boosters at stake. Pick your deck below: the run starts on every device when the host presses Start."
+                : `You choose the table, the boosters and the AIs' decks; every friend picks their own deck on their device. ${friendsIn.length} friend${friendsIn.length === 1 ? "" : "s"} in the room.`
           }
         />
       )}
       {guestWaiting ? (
         <div className="pf-panel" style={{ maxWidth: 520, margin: "0 auto 1.2rem" }}>
           <div className="pf-seg" style={{ marginBottom: "0.8rem" }}>
-            <button type="button" onClick={() => set({ mode: "ai", names: [s.names[0], "Forge AI"] })}>
+            <button type="button" onClick={() => set({ mode: "ai" })}>
               Vs AI
             </button>
             <button type="button" className="sel">
-              Vs a friend (online)
+              Vs friends (online)
             </button>
           </div>
           <label className="pf-field">
             <span>Your name</span>
             <input value={s.names[0]} maxLength={24} onChange={(e) => set({ names: [e.target.value, s.names[1]] })} />
           </label>
+          <div className="pf-hub-list" style={{ marginTop: "0.8rem" }}>
+            {room.players.map((p) => (
+              <div key={p.id}>
+                <span className={`pf-room-dot${p.deck ? " on" : ""}`} />
+                <span>
+                  {p.name}
+                  {p.id === "host" ? " (host)" : p.id === room.myId ? " (you)" : ""}
+                  {p.deck ? " · deck chosen" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
-      <div className="pf-grid2" style={{ marginBottom: "1.2rem" }}>
-        <div className="pf-panel">
-          <div className="pf-field">
-            <span>Opponent</span>
-            <div className="pf-seg">
-              <button type="button" className={s.mode === "ai" ? "sel" : ""} onClick={() => set({ mode: "ai", names: [s.names[0], s.names[1] === "Player 2" ? "Forge AI" : s.names[1]] })}>
-                Vs AI
-              </button>
-              <button type="button" className={s.mode === "friend" ? "sel" : ""} onClick={() => set({ mode: "friend", names: [s.names[0], s.names[1] === "Forge AI" ? "Player 2" : s.names[1]] })}>
-                Vs a friend (online)
-              </button>
+        <div className="pf-grid2" style={{ marginBottom: "1.2rem" }}>
+          <div className="pf-panel">
+            <div className="pf-field">
+              <span>Opponents</span>
+              <div className="pf-seg">
+                <button type="button" className={s.mode === "ai" ? "sel" : ""} onClick={() => set({ mode: "ai" })}>
+                  Vs AI
+                </button>
+                <button type="button" className={s.mode === "friend" ? "sel" : ""} onClick={() => set({ mode: "friend" })}>
+                  Vs friends (online)
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="pf-fields" style={{ marginTop: "1rem" }}>
-            <label className="pf-field">
-              <span>Your name</span>
-              <input value={s.names[0]} maxLength={24} onChange={(e) => set({ names: [e.target.value, s.names[1]] })} />
-            </label>
-            {!inRoom && (
+            <div className="pf-fields" style={{ marginTop: "1rem" }}>
               <label className="pf-field">
-                <span>{s.mode === "ai" ? "AI name" : "Friend's name"}</span>
-                <input value={s.names[1]} maxLength={24} onChange={(e) => set({ names: [s.names[0], e.target.value] })} />
+                <span>Your name</span>
+                <input value={s.names[0]} maxLength={24} onChange={(e) => set({ names: [e.target.value, s.names[1]] })} />
               </label>
-            )}
-            {s.mode === "ai" && (
               <label className="pf-field">
-                <span>AI difficulty</span>
-                <select value={s.difficulty} onChange={(e) => set({ difficulty: e.target.value })}>
-                  {AI_DIFFICULTIES.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.id.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                <span>Players</span>
+                <select value={s.players} onChange={(e) => set({ players: Number(e.target.value) })}>
+                  {[2, 3, 4].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
                     </option>
                   ))}
                 </select>
               </label>
+              {seatsIdx.some((i) => kindAt(i) === "ai") && (
+                <>
+                  <label className="pf-field">
+                    <span>AI name</span>
+                    <input value={s.names[1]} maxLength={24} onChange={(e) => set({ names: [s.names[0], e.target.value] })} />
+                  </label>
+                  <label className="pf-field">
+                    <span>AI difficulty</span>
+                    <select value={s.difficulty} onChange={(e) => set({ difficulty: e.target.value })}>
+                      {AI_DIFFICULTIES.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.id.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
+              {s.mode === "friend" && !inRoom && (
+                <label className="pf-field">
+                  <span>Friend's name</span>
+                  <input value={s.names[1]} maxLength={24} onChange={(e) => set({ names: [s.names[0], e.target.value] })} />
+                </label>
+              )}
+            </div>
+            {s.players === 4 && (
+              <div className="pf-field" style={{ marginTop: "0.9rem" }}>
+                <span>Table of 4</span>
+                <div className="pf-seg">
+                  <button type="button" className={!s.teams ? "sel" : ""} onClick={() => set({ teams: false })}>
+                    Free for all
+                  </button>
+                  <button type="button" className={s.teams ? "sel" : ""} onClick={() => set({ teams: true })}>
+                    Teams 2 vs 2
+                  </button>
+                </div>
+              </div>
+            )}
+            {s.mode === "friend" && (
+              <div className="pf-seats" style={{ marginTop: "0.9rem" }}>
+                {seatsIdx.slice(1).map((i) => (
+                  <div key={i} className="pf-seat">
+                    <div className="pf-seat-head">
+                      <b>Seat {i + 1}</b>
+                      {teams && <span className="pf-hint">{i === 1 ? "your teammate" : "opponent team"}</span>}
+                      <div className="pf-seg">
+                        <button type="button" className={s.seatKinds[i - 1] !== "ai" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i - 1 ? "friend" : x)) })}>
+                          Friend
+                        </button>
+                        <button type="button" className={s.seatKinds[i - 1] === "ai" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i - 1 ? "ai" : x)) })}>
+                          AI
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        </div>
-        <div className="pf-panel">
-          <div className="pf-fields">
-            <label className="pf-field">
-              <span>Boosters at stake</span>
-              <select value={s.packs} onChange={(e) => set({ packs: Number(e.target.value) })}>
-                {[2, 4, 6, 8, 10, 12, 14, 16, 20, 24].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="pf-field">
-              <span>Starting life</span>
-              <input type="number" min={1} max={999} placeholder="20" value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
-            </label>
+          <div className="pf-panel">
+            <div className="pf-fields">
+              <label className="pf-field">
+                <span>Boosters at stake</span>
+                <select value={s.packs} onChange={(e) => set({ packs: Number(e.target.value) })}>
+                  {[2, 3, 4, 6, 8, 9, 10, 12, 14, 15, 16, 18, 20, 24].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="pf-field">
+                <span>Starting life</span>
+                <input type="number" min={1} max={999} placeholder={teams ? "per team" : commanderRules ? "40" : "20"} value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
+              </label>
+            </div>
+            <div className="pf-summary">
+              <b>{packsRounded}</b> boosters{packsRounded !== s.packs ? ` (a multiple of ${n} players)` : ""} → <b>{packsRounded / n + 1}</b> games: one before each round of boosters, then a last one.
+              {n === 2 ? " Game 1 starts at random, later games the loser chooses." : " Game 1 starts at random, later games the player after the winner starts."}
+              {teams && " Teams: seats 1+2 against 3+4 (Two-Headed Giant rules, shared life)."}
+              {teams && commanderRules && " With commanders the engine uses its Two-Headed Giant Commander rules, which check 100-card singleton lists."}
+              {s.mode === "friend" && !inRoom && <> Open a room above, or start now and send your friend the save code.</>}
+            </div>
           </div>
-          <div className="pf-summary">
-            <b>{s.packs / 2 + 1}</b> games: one before each pair of boosters, then a last one. Game 1 starts at random, later games the loser chooses.
-            {s.mode === "friend" && !inRoom && <> Open a room above, or start now and send your friend the save code.</>}
-          </div>
         </div>
-      </div>
       )}
 
       <div className="pf-chosen">
-        {([0, 1] as const).map((i) => {
-          const d = view[i];
-          const mine = !inRoom || i === mySeat;
-          const active = inRoom ? i === mySeat : slot === i;
+        {seatsIdx.map((i) => {
+          const d = guestWaiting ? chosen[0] : deckAt(i);
+          const mine = guestWaiting || pickable(i);
+          const active = guestWaiting || slot === i;
+          const label = guestWaiting ? s.names[0] || "You" : nameAt(i);
+          const friend = !guestWaiting && kindAt(i) === "friend" ? friendAt(i) : undefined;
           return (
-            <button key={i} type="button" className={`${active ? "active" : ""}${mine ? "" : " locked"}`} onClick={() => !inRoom && setSlot(i)}>
+            <button key={i} type="button" className={`${active && mine ? "active" : ""}${mine ? "" : " locked"}`} onClick={() => mine && !guestWaiting && setSlot(i)}>
               <div className="thumb" style={{ backgroundImage: d?.face ? `url("${printImage(d.face, "art_crop")}")` : undefined }} />
               <div>
-                <small>{slotLabel(i)}'s deck {active ? "· choosing" : ""}</small>
-                <b>{d?.name ?? (mine ? "Pick a deck below" : linked ? `${slotLabel(i)} is choosing…` : "Waiting for your friend…")}</b>
+                <small>
+                  {label}'s deck{teams && !guestWaiting ? ` · team ${i < 2 ? "A" : "B"}` : ""} {active && mine ? "· choosing" : ""}
+                </small>
+                <b>{d?.name ?? (mine ? "Pick a deck below" : friend ? `${label} is choosing…` : linked ? "Waiting for a friend to join…" : "Waiting for your friends…")}</b>
                 {d && (d.partial ?? warnings.get(d.id))?.length ? (
                   <small style={{ color: "#f2b49f" }}>⚠ May not work: {(d.partial ?? warnings.get(d.id))!.join(", ")}</small>
                 ) : d ? (
@@ -619,54 +760,47 @@ function StarterSetup({
       </div>
 
       <div className="pf-deckbar">
-        <div className="pf-seg" title="Commander: your own commander lists, command zone and Commander rules">
+        <div className="pf-seg" title="Commander: official Commander precons or your own commander lists, command zone and commander rules">
           <button type="button" className={commanderRules ? "" : "sel"} onClick={() => setCommanderRules(false)}>
             Normal
           </button>
-          <button
-            type="button"
-            className={commanderRules ? "sel" : ""}
-            onClick={() => {
-              setCommanderRules(true);
-              setSource("list");
-            }}
-          >
+          <button type="button" className={commanderRules ? "sel" : ""} onClick={() => setCommanderRules(true)}>
             👑 Commander
           </button>
         </div>
-        {!commanderRules && (
+        {pool.length > 0 && (
           <button type="button" className={`pf-vchip${source === "precon" ? " sel" : ""}`} onClick={() => setSource("precon")}>
-            Precons
+            {commanderRules ? "Commander precons" : "Precons"}
           </button>
         )}
         <button type="button" className={`pf-vchip${source === "list" ? " sel" : ""}`} onClick={() => setSource("list")}>
           ✎ Your list
         </button>
         {source === "precon" && (
-        <>
-        <input placeholder="Search name or year…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 220 }} />
-        <select value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">All products</option>
-          {types.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        {["W", "U", "B", "R", "G", "C"].map((c) => (
-          <button key={c} type="button" className={`pf-vchip${color === c ? " sel" : ""}`} onClick={() => setColor(color === c ? "" : c)}>
-            <span className="sw" style={{ background: PIP[c] }} />
-            {c}
-          </button>
-        ))}
-        <label className="pf-check" style={{ marginTop: 0 }}>
-          <input type="checkbox" checked={hideWarn} onChange={(e) => setHideWarn(e.target.checked)} />
-          <span>Only fully working decks</span>
-        </label>
-        <button type="button" className="pf-vchip" onClick={random}>
-          🎲 Random
-        </button>
-        </>
+          <>
+            <input placeholder={commanderRules ? "Search name, commander or year…" : "Search name or year…"} value={query} onChange={(e) => setQuery(e.target.value)} style={{ minWidth: 220 }} />
+            <select value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="">All products</option>
+              {types.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            {["W", "U", "B", "R", "G", "C"].map((c) => (
+              <button key={c} type="button" className={`pf-vchip${color === c ? " sel" : ""}`} onClick={() => setColor(color === c ? "" : c)}>
+                <span className="sw" style={{ background: PIP[c] }} />
+                {c}
+              </button>
+            ))}
+            <label className="pf-check" style={{ marginTop: 0 }}>
+              <input type="checkbox" checked={hideWarn} onChange={(e) => setHideWarn(e.target.checked)} />
+              <span>Only fully working decks</span>
+            </label>
+            <button type="button" className="pf-vchip" onClick={random}>
+              🎲 Random
+            </button>
+          </>
         )}
         <span className="pf-hint" style={{ marginLeft: "auto" }}>
           {source === "precon" ? `${shown.length} decks` : ""}
@@ -675,7 +809,7 @@ function StarterSetup({
           Load a save code
         </button>
         {guestWaiting ? (
-          <span className="pf-hint-pulse">Waiting for {peerName} to start…</span>
+          <span className="pf-hint-pulse">Waiting for {hostName} to start…</span>
         ) : (
           <button type="button" className="pf-btn small" disabled={!canStart} onClick={start}>
             Start ▸
@@ -683,36 +817,44 @@ function StarterSetup({
         )}
       </div>
 
-      {commanderRules && !rulesOk && view[0] && view[1] && <p className="pf-error">Commander rules: both decks must be commander lists.</p>}
+      {commanderRules && !rulesOk && <p className="pf-error">Commander rules: every deck must be a commander deck.</p>}
       {source === "list" && (
         <div className="pf-panel" style={{ marginBottom: "1rem" }}>
           <DeckImportPanel data={data} commander={commanderRules} slot={`starter-${commanderRules ? "cmd" : "std"}`} onDeck={setImported} />
           <div className="pf-import-use">
             <button type="button" className="pf-btn small" disabled={!importReady(imported, commanderRules)} onClick={useImported}>
-              {inRoom ? "Use as my deck" : `Use for ${slotLabel(slot)}`}
+              {guestWaiting ? "Use as my deck" : `Use for ${nameAt(pickable(slot) ? slot : 0)}`}
             </button>
-            {!inRoom && <span className="pf-hint">Pick the player above first (click their deck slot).</span>}
+            {!guestWaiting && players > 1 && <span className="pf-hint">Pick the player above first (click their deck slot).</span>}
           </div>
         </div>
       )}
       <div className="pf-deckgrid" style={source === "list" ? { display: "none" } : undefined}>
         {shown.slice(page * PAGE, page * PAGE + PAGE).map((d) => (
-          <div key={d.id} onContextMenu={(e) => { e.preventDefault(); if (d.face) setPeek(d.face); }}>
-            <DeckTile deck={d} selected={view[0]?.id === d.id || view[1]?.id === d.id} warning={warnings.get(d.id)} onClick={() => pick(d)} />
+          <div
+            key={d.id}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              if (d.face) setPeek(d.face);
+            }}
+          >
+            <DeckTile deck={d} selected={seatsIdx.some((i) => (guestWaiting ? chosen[0] : deckAt(i))?.id === d.id)} warning={warnings.get(d.id)} onClick={() => place(d)} />
           </div>
         ))}
       </div>
-      {pages > 1 && (
+      {pages > 1 && source === "precon" && (
         <div className="pf-pager">
           <button type="button" className="pf-vchip" disabled={page === 0} onClick={() => goPage(page - 1)}>
             ‹ Prev
           </button>
-          {pagerItems(page, pages).map((n, i) =>
-            n < 0 ? (
-              <span key={`gap${i}`} className="gap">…</span>
+          {pagerItems(page, pages).map((v, i) =>
+            v < 0 ? (
+              <span key={`gap${i}`} className="gap">
+                …
+              </span>
             ) : (
-              <button key={n} type="button" className={`pf-vchip${n === page ? " sel" : ""}`} onClick={() => goPage(n)}>
-                {n + 1}
+              <button key={v} type="button" className={`pf-vchip${v === page ? " sel" : ""}`} onClick={() => goPage(v)}>
+                {v + 1}
               </button>
             ),
           )}
@@ -741,34 +883,40 @@ function StarterMatch({
   setRun: (r: StarterRun) => void;
   onError: (e: string | null) => void;
   navigate: (to: string, opts?: { state?: unknown }) => void;
-  room: RoomState;
+  room: HubState;
 }) {
   const me = run.players[run.me];
-  const opp = run.players[(1 - run.me) as Slot];
+  const others = othersOf(run);
+  const duel = run.players.length === 2;
+  const opp = others[0].p;
   const hostingStatus = useMultiplayerStore((s) => s.hostingStatus);
   const hostGameCode = useMultiplayerStore((s) => s.hostGameCode);
   const cardStatus = useCardDataStore((s) => s.status);
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState(false);
-  const iLost = run.game > 0 && run.lastWinner !== null && run.lastWinner !== run.me;
-  const loserName = run.lastWinner === null ? "" : run.players[(1 - run.lastWinner) as Slot].name;
-  // Vs a friend in a mode room: the loser's choice of who starts travels over the
-  // room, then the game room opens and is joined by itself.
+  const teams = starterTeams(run);
+  // Two players: the loser of the last game chooses who starts.
+  const iLost = duel && run.game > 0 && run.lastWinner !== null && run.lastWinner !== run.me;
+  const loserName = duel && run.lastWinner !== null ? run.players[run.lastWinner === 0 ? 1 : 0].name : "";
+  // Vs friends in a mode room: the loser's choice of who starts travels over the
+  // room, then the game room opens and is joined by itself (friends one after the
+  // other, so that every device keeps its seat of the run).
   const [manualRoom, setManualRoom] = useState(false);
   const inRoom = run.mode === "friend" && !!room.room;
   const matchKey = `${run.id}:${run.game}`;
   const firstMsg = room.latest.first as { key?: string; seat?: Slot } | undefined;
   useEffect(() => {
-    if (!firstMsg || firstMsg.key !== matchKey || (firstMsg.seat !== 0 && firstMsg.seat !== 1) || run.nextFirst === firstMsg.seat) return;
+    if (!firstMsg || firstMsg.key !== matchKey || typeof firstMsg.seat !== "number" || !run.players[firstMsg.seat] || run.nextFirst === firstMsg.seat) return;
     setRun({ ...run, nextFirst: firstMsg.seat });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstMsg?.key, firstMsg?.seat, matchKey]);
   const chooseFirst = (seat: Slot) => {
     setRun({ ...run, nextFirst: seat });
-    if (inRoom) room.send({ k: "first", key: matchKey, seat });
+    if (inRoom) room.send({ k: "first", key: matchKey, seat, fwd: true });
   };
-  const needsChoice = run.game > 0 && run.lastWinner !== null && run.nextFirst === null;
+  const needsChoice = duel && run.game > 0 && run.lastWinner !== null && run.nextFirst === null;
+  const friendOrder = run.players.slice(0, run.me).filter((p) => p.kind === "human").length;
   const auto = useAutoMatchRoom({
     state: room,
     matchKey,
@@ -782,12 +930,13 @@ function StarterMatch({
       await joinFriendMatchSpec(specOf(), data, code, crypto.randomUUID(), navigate);
     },
     onError: (e) => onError(e),
+    seat: run.me === 0 ? undefined : friendOrder,
   });
 
-  const claim = async (myWins: number, oppWins: number) => {
+  const claim = async (winner: Slot | null) => {
     setBusy(true);
     try {
-      setRun(await applyStarterResult(data, run, myWins, oppWins));
+      setRun(await applyStarterResult(data, run, winner));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -795,14 +944,18 @@ function StarterMatch({
     }
   };
 
+  const sides = [...new Set(run.players.map((_, i) => sideLead(run, i)))];
+
   if (run.pendingResult) {
-    const won = run.pendingResult.myWins > run.pendingResult.oppWins;
+    const winner = starterWinner(run);
+    const won = winner !== null && sameSide(run, winner, run.me);
     return (
       <div className="pf-stage">
         <div className="pf-eyebrow">Game {run.game + 1}</div>
         <div className={`pf-result ${won ? "win" : "loss"}`}>{won ? "Victory" : "Defeat"}</div>
+        {winner !== null && !duel && <p className="pf-sub">{sideName(run, winner)} won.</p>}
         <div className="pf-row">
-          <button type="button" className="pf-btn" disabled={busy} onClick={() => void claim(run.pendingResult!.myWins, run.pendingResult!.oppWins)}>
+          <button type="button" className="pf-btn" disabled={busy} onClick={() => void claim(winner)}>
             Continue ▸
           </button>
         </div>
@@ -812,18 +965,26 @@ function StarterMatch({
 
   const spec = (): MatchSpec => specOf();
   function specOf(): MatchSpec {
-    const format = starterFormat(run);
+    const deckRules = starterFormat(run);
+    const firstOther = others[0].i;
+    // The AI seats are played on the host's device (or in the game vs AI), each at its own seat.
+    const ownsTable = run.mode === "ai" || run.me === 0;
     return {
-    me: forMatch(me, format),
-    opp: forMatch(opponentStandIn(data, run), format),
-    format,
-    difficulty: run.difficulty,
-    startingLife: run.startingLife,
-    matchType: "Bo1",
-    first: run.nextFirst === null ? null : run.nextFirst === run.me ? "play" : "draw",
-    hostFirst: run.nextFirst === null ? null : run.nextFirst === run.me ? 0 : 1,
-    youDeck: YOU_DECK,
-    aiDeck: AI_DECK,
+      me: forMatch(me, deckRules),
+      opp: forMatch(opponentStandIn(data, run, firstOther), deckRules),
+      format: starterTableFormat(run),
+      difficulty: run.difficulty,
+      startingLife: run.startingLife,
+      matchType: "Bo1",
+      first: duel && run.nextFirst !== null ? (run.nextFirst === run.me ? "play" : "draw") : null,
+      // The host's device is seat 0 of the game: every seat keeps its number.
+      hostFirst: run.nextFirst === null ? null : duel ? (run.nextFirst === run.me ? 0 : 1) : run.nextFirst,
+      youDeck: YOU_DECK,
+      aiDeck: AI_DECK,
+      players: run.players.length,
+      aiSeats: ownsTable
+        ? others.filter((x) => x.p.kind === "ai").map((x) => ({ player: forMatch(x.p, deckRules), difficulty: run.difficulty, seatIndex: x.i }))
+        : [],
     };
   }
   const start = async (fn: () => Promise<unknown>, pending: string) => {
@@ -840,8 +1001,8 @@ function StarterMatch({
     }
   };
   const loading = cardStatus === "loading";
-  const starterLabel =
-    run.nextFirst === null ? "Random" : run.nextFirst === run.me ? `${me.name} plays first` : `${opp.name} plays first`;
+  const starterLabel = run.nextFirst === null ? "Random" : `${run.players[run.nextFirst]?.name ?? "?"} plays first`;
+  const canHost = duel || run.me === 0;
 
   return (
     <div className="pf-stage">
@@ -853,16 +1014,25 @@ function StarterMatch({
       <div className="pf-panel" style={{ maxWidth: 760, margin: "0 auto" }}>
         <div className="pf-versus">
           <div className="side">
-            <b>{me.name}</b>
-            <span>{deckSize(me)} cards · {me.wins}–{me.losses}</span>
+            <b>{teams ? sideName(run, run.me) : me.name}</b>
+            <span>
+              {deckSize(me)} cards · {me.wins}–{me.losses}
+            </span>
           </div>
           <div className="x">VS</div>
           <div className="side">
-            <b>{opp.name}</b>
-            <span>
-              {opp.kind === "ai" ? `${deckSize(opp)} cards · ` : ""}
-              {opp.wins}–{opp.losses}
-            </span>
+            {others
+              .filter((x) => !sameSide(run, x.i, run.me))
+              .map((x) => (
+                <div key={x.i}>
+                  <b>{x.p.name}</b>
+                  <span>
+                    {" "}
+                    {x.p.kind === "ai" ? `AI · ${deckSize(x.p)} cards · ` : ""}
+                    {x.p.wins}–{x.p.losses}
+                  </span>
+                </div>
+              ))}
           </div>
         </div>
 
@@ -872,6 +1042,8 @@ function StarterMatch({
           </div>
           {run.game === 0 ? (
             <p className="pf-hint">Game 1: decided at random.</p>
+          ) : !duel ? (
+            <p className="pf-hint">{run.nextFirst === null ? "Random." : `${starterLabel} (the player after the last winner).`}</p>
           ) : iLost || run.mode === "friend" ? (
             <>
               <p className="pf-hint">
@@ -885,7 +1057,7 @@ function StarterMatch({
                 <button type="button" disabled={inRoom && !iLost} className={`pf-btn small ${run.nextFirst === run.me ? "" : "secondary"}`} onClick={() => chooseFirst(run.me)}>
                   {me.name} plays first
                 </button>
-                <button type="button" disabled={inRoom && !iLost} className={`pf-btn small ${run.nextFirst === 1 - run.me ? "" : "secondary"}`} onClick={() => chooseFirst((1 - run.me) as Slot)}>
+                <button type="button" disabled={inRoom && !iLost} className={`pf-btn small ${run.nextFirst === others[0].i ? "" : "secondary"}`} onClick={() => chooseFirst(others[0].i)}>
                   {opp.name} plays first
                 </button>
               </div>
@@ -925,7 +1097,7 @@ function StarterMatch({
             <p className="pf-hint-pulse">{needsChoice ? `Waiting for ${iLost ? "your" : `${loserName}'s`} choice of who starts…` : auto.waiting}</p>
             {room.room?.role === "host" ? (
               <div className="pf-row">
-                {auto.stuck && <span className="pf-hint">Your friend has not entered yet?</span>}
+                {auto.stuck && <span className="pf-hint">Someone has not entered yet?</span>}
                 <button type="button" className={auto.stuck ? "pf-btn small" : "pf-btn-mini"} onClick={auto.restart}>
                   ⟳ Open a new game room
                 </button>
@@ -957,35 +1129,43 @@ function StarterMatch({
           </div>
         ) : (
           <div style={{ marginTop: "1.2rem", display: "grid", gap: "1.2rem", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
-            <div>
-              <div className="pf-field"><span>Host the room</span></div>
-              {hostingStatus !== "idle" ? (
-                <div style={{ textAlign: "center" }}>
-                  {hostGameCode ? (
-                    <>
-                      <button type="button" className="pf-code" onClick={() => void navigator.clipboard?.writeText(hostGameCode).catch(() => {})}>
-                        {hostGameCode}
-                      </button>
-                      <p className="pf-hint">Tell {opp.name} this code. The game starts as soon as they join.</p>
-                    </>
-                  ) : (
-                    <p className="pf-hint-pulse">Opening the room…</p>
-                  )}
-                  <button type="button" className="pf-btn secondary small" onClick={() => useMultiplayerStore.getState().cancelHosting()}>
-                    Cancel room
-                  </button>
-                </div>
-              ) : (
-                <div className="pf-row" style={{ justifyContent: "flex-start", marginTop: "0.6rem" }}>
-                  <button type="button" className="pf-btn" disabled={busy || loading} onClick={() => void start(() => hostFriendMatchSpec(spec(), data), "*")}>
-                    Create room ▸
-                  </button>
-                </div>
-              )}
-            </div>
-            {hostingStatus === "idle" && (
+            {canHost && (
               <div>
-                <div className="pf-field"><span>Or join your friend's room</span></div>
+                <div className="pf-field">
+                  <span>Host the room</span>
+                </div>
+                {hostingStatus !== "idle" ? (
+                  <div style={{ textAlign: "center" }}>
+                    {hostGameCode ? (
+                      <>
+                        <button type="button" className="pf-code" onClick={() => void navigator.clipboard?.writeText(hostGameCode).catch(() => {})}>
+                          {hostGameCode}
+                        </button>
+                        <p className="pf-hint">
+                          Tell {others.filter((x) => x.p.kind === "human").map((x) => x.p.name).join(", ") || opp.name} this code{duel ? "" : " (friends enter in seat order)"}. The game starts as soon as every seat is taken.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="pf-hint-pulse">Opening the room…</p>
+                    )}
+                    <button type="button" className="pf-btn secondary small" onClick={() => useMultiplayerStore.getState().cancelHosting()}>
+                      Cancel room
+                    </button>
+                  </div>
+                ) : (
+                  <div className="pf-row" style={{ justifyContent: "flex-start", marginTop: "0.6rem" }}>
+                    <button type="button" className="pf-btn" disabled={busy || loading} onClick={() => void start(() => hostFriendMatchSpec(spec(), data), "*")}>
+                      Create room ▸
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {hostingStatus === "idle" && (duel || run.me !== 0) && (
+              <div>
+                <div className="pf-field">
+                  <span>{duel ? "Or join your friend's room" : "Join the host's room"}</span>
+                </div>
                 <div className="pf-row" style={{ justifyContent: "flex-start", marginTop: "0.6rem" }}>
                   <input value={joinCode} maxLength={5} placeholder="CODE" style={{ width: 130, textTransform: "uppercase", letterSpacing: "0.3em", fontFamily: "Cinzel" }} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} />
                   <button
@@ -1005,6 +1185,7 @@ function StarterMatch({
                     Join ▸
                   </button>
                 </div>
+                {friendOrder > 1 && <p className="pf-hint">Join after the friends in the seats before yours, so that everyone keeps their seat.</p>}
               </div>
             )}
           </div>
@@ -1017,12 +1198,11 @@ function StarterMatch({
             </button>
           ) : (
             <div className="pf-row">
-              <button type="button" className="pf-btn small" disabled={busy} onClick={() => void claim(1, 0)}>
-                I won
-              </button>
-              <button type="button" className="pf-btn small secondary" disabled={busy} onClick={() => void claim(0, 1)}>
-                I lost
-              </button>
+              {sides.map((lead) => (
+                <button key={lead} type="button" className={`pf-btn small ${sameSide(run, lead, run.me) ? "" : "secondary"}`} disabled={busy} onClick={() => void claim(lead)}>
+                  {sameSide(run, lead, run.me) ? (teams ? "We won" : "I won") : duel ? "I lost" : `${sideName(run, lead)} won`}
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -1035,19 +1215,23 @@ function StarterMatch({
 
 function StarterReward({ run, data, setRun }: { run: StarterRun; data: ProgData; setRun: (r: StarterRun) => void }) {
   const me = run.players[run.me];
-  const opp = run.players[(1 - run.me) as Slot];
   const r = me.reward;
   const [picked, setPicked] = useState<string | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [zoom, setZoom] = useState<ProgPrint | null>(null);
   const toPacks = () => setRun({ ...run, phase: "packs" });
 
+  // What the AIs got (friends take theirs on their own devices).
   const oppNote = (() => {
-    const o = opp.reward;
-    if (!o || opp.kind !== "ai") return null;
-    if (o.kind === "list") return `${opp.name} chose ${COLOR_LABEL[o.color ?? "C"]} and got ${o.list?.[0]?.n ?? "a card"} from The List.`;
-    const card = o.picked ? data.byKey.get(o.picked)?.card.name : null;
-    return `${opp.name} spun ${o.rarity ? RARITY_LABEL[o.rarity] : "the wheel"}${card ? ` and added a copy of ${card}` : ""}.`;
+    const notes = othersOf(run)
+      .filter((x) => x.p.kind === "ai" && x.p.reward)
+      .map(({ p: opp }) => {
+        const o = opp.reward!;
+        if (o.kind === "list") return `${opp.name} chose ${COLOR_LABEL[o.color ?? "C"]} and got ${o.list?.[0]?.n ?? "a card"} from The List.`;
+        const card = o.picked ? data.byKey.get(o.picked)?.card.name : null;
+        return `${opp.name} spun ${o.rarity ? RARITY_LABEL[o.rarity] : "the wheel"}${card ? ` and added a copy of ${card}` : ""}.`;
+      });
+    return notes.length ? notes.join(" ") : null;
   })();
 
   if (!r) {
@@ -1124,7 +1308,7 @@ function StarterReward({ run, data, setRun }: { run: StarterRun; data: ProgData;
         landing={r.rarity ?? "c"}
         spun={Boolean(r.spun) || r.done}
         onSpun={() => {
-          const players = run.players.slice() as [PlayerState, PlayerState];
+          const players = run.players.slice();
           players[run.me] = { ...me, reward: { ...r, spun: true } };
           setRun({ ...run, players });
         }}
@@ -1181,56 +1365,80 @@ function StarterPacks({
   setRun,
   say,
   onError,
+  room,
 }: {
   run: StarterRun;
   data: ProgData;
   setRun: (r: StarterRun) => void;
   say: (m: string) => void;
   onError: (e: string | null) => void;
+  room: HubState;
 }) {
   const [opening, setOpening] = useState<Pack | null>(null);
   const [busy, setBusy] = useState(false);
   const turn = picker(run);
-  const opp = (1 - run.me) as Slot;
   const myTurn = turn === run.me;
-  const aiTurn = turn === opp && run.players[opp].kind === "ai";
-  const friend = run.players[opp].kind === "human";
+  const turnPlayer = turn === null ? null : run.players[turn];
+  const humans = othersOf(run).filter((x) => x.p.kind === "human");
+  const friend = humans.length > 0;
+  const inRoom = run.mode === "friend" && !!room.room;
+  // The AIs pick on the device that owns the table (the host, or the game vs AI): everyone else receives their picks.
+  const aiAuthority = run.mode === "ai" || run.me === 0 || !inRoom;
+  const aiTurn = turn !== null && turn !== run.me && turnPlayer?.kind === "ai";
 
-  // Vs a friend: live link so the other device sees each pick at once.
+  // Vs friends: every device tells the others its picks at once (through the room;
+  // two players without a room: the direct link).
   const [linkStatus, setLinkStatus] = useState<LinkStatus>("connecting");
-  const [remote, setRemote] = useState<LinkState | null>(null);
+  const [direct, setDirect] = useState<LinkState | null>(null);
   const [manual, setManual] = useState(false);
   const [skipSync, setSkipSync] = useState(false);
   const [slowLink, setSlowLink] = useState(false);
   const link = useRef<StarterLink | null>(null);
+  const useDirect = friend && !inRoom && run.players.length === 2;
   useEffect(() => {
-    if (!friend) return;
+    if (!useDirect) return;
     const l = openStarterLink({
       runId: run.id,
-      me: run.me,
+      me: run.me as 0 | 1,
       createPeer: (id, config) => createPeer(id, { config }) as unknown as LinkPeer,
       iceConfig: () => fetchFreshTurnConfig(),
-      onState: setRemote,
+      onState: setDirect,
       onStatus: setLinkStatus,
     });
     link.current = l;
-    const slow = window.setTimeout(() => setSlowLink(true), 20000);
     return () => {
-      window.clearTimeout(slow);
       l.close();
       link.current = null;
     };
-  }, [friend, run.id, run.me]);
-  const picks = run.grid.flatMap((g, i) => (g.taker === null ? [] : [{ i, slot: g.taker, round: g.round }]));
+  }, [useDirect, run.id, run.me]);
+  useEffect(() => {
+    if (!friend) return;
+    const slow = window.setTimeout(() => setSlowLink(true), 20000);
+    return () => window.clearTimeout(slow);
+  }, [friend]);
+  const picks: LinkPick[] = run.grid.flatMap((g, i) => (g.taker === null ? [] : [{ i, slot: g.taker, round: g.round }]));
   const picksSig = JSON.stringify(picks);
+  const roomStatus = room.status;
+  const roomSend = room.send;
   useEffect(() => {
-    link.current?.send({ run: run.id, game: run.game, picks });
+    if (useDirect) link.current?.send({ run: run.id, game: run.game, picks });
+    else if (inRoom) roomSend({ k: `picks${run.me}`, fwd: true, run: run.id, game: run.game, picks });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [picksSig, linkStatus, run.id, run.game]);
-  // The friend's picks: open the same (seeded) boosters into their collection here.
+  }, [picksSig, linkStatus, roomStatus, run.id, run.game, useDirect, inRoom]);
+  // What every other player's device knows.
+  const remotes: LinkState[] = useDirect
+    ? direct
+      ? [direct]
+      : []
+    : humans
+        .map((x) => room.latest[`picks${x.i}`] as unknown as LinkState | undefined)
+        .filter((st): st is LinkState => !!st && st.run === run.id && Array.isArray(st.picks));
+  const remoteSig = JSON.stringify(remotes.map((r) => r.picks));
+  // Their picks: open the same (seeded) boosters into their collections here.
   useEffect(() => {
-    if (!remote || busy || opening) return;
-    const missing = remote.picks.filter((p) => run.grid[p.i] && run.grid[p.i].taker === null);
+    if (!remotes.length || busy || opening) return;
+    const seen = new Set<number>();
+    const missing = remotes.flatMap((r) => r.picks).filter((p) => run.grid[p.i] && run.grid[p.i].taker === null && !seen.has(p.i) && (seen.add(p.i), true));
     if (!missing.length) return;
     let cancelled = false;
     setBusy(true);
@@ -1242,8 +1450,8 @@ function StarterPacks({
       }
       if (cancelled) return;
       setRun(r);
-      const theirs = missing.filter((p) => p.slot === opp);
-      if (theirs.length) say(`${run.players[opp].name} took booster #${theirs[theirs.length - 1].i + 1}`);
+      const last = missing.filter((p) => p.slot !== run.me).pop();
+      if (last) say(`${run.players[last.slot]?.name ?? "?"} took booster #${last.i + 1}`);
     })()
       .catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
@@ -1251,20 +1459,21 @@ function StarterPacks({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remote, run.grid, opening]);
-  const waitingFriend = friend && turn === opp && !manual;
-  const synced = !friend || skipSync || (remote !== null && picks.every((p) => remote.picks.some((q) => q.i === p.i)));
+  }, [remoteSig, run.grid, opening]);
+  const waitingOther = turn !== null && turn !== run.me && !manual && (turnPlayer?.kind === "human" ? friend : !aiAuthority);
+  const synced =
+    !friend || skipSync || (remotes.length >= (useDirect ? 1 : humans.length) && remotes.every((r) => picks.every((p) => r.picks.some((q) => q.i === p.i))));
 
-  // The AI picks on its own (after my booster animation, if any).
+  // An AI picks on its own (after my booster animation, if any).
   useEffect(() => {
-    if (!aiTurn || opening) return;
+    if (!aiTurn || !aiAuthority || opening || turn === null) return;
     let cancelled = false;
     const t = window.setTimeout(() => {
       setBusy(true);
-      aiTakePack(data, run)
+      aiTakePack(data, run, turn)
         .then((res) => {
           if (cancelled) return;
-          say(`${run.players[opp].name} took booster #${res.index + 1}`);
+          say(`${run.players[turn].name} took booster #${res.index + 1}`);
           setRun(res.run);
         })
         .catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)))
@@ -1275,17 +1484,17 @@ function StarterPacks({
       window.clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiTurn, run.grid, opening]);
+  }, [aiTurn, aiAuthority, run.grid, opening]);
 
   const take = async (i: number) => {
     if (busy || turn === null) return;
-    if (!myTurn && aiTurn) return;
+    if (aiTurn && aiAuthority) return;
     setBusy(true);
     try {
-      const res = await takePack(data, run, i, myTurn ? run.me : opp);
+      const res = await takePack(data, run, i, turn);
       setRun(res.run);
       if (myTurn && res.pack) setOpening(res.pack);
-      else if (res.pack) say(`Marked: ${run.players[opp].name} took booster #${i + 1}`);
+      else if (res.pack) say(`Marked: ${run.players[turn].name} took booster #${i + 1}`);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1304,74 +1513,71 @@ function StarterPacks({
   }
 
   const winnerName = run.lastWinner === null ? "" : run.players[run.lastWinner].name;
+  const turnName = turnPlayer?.name ?? "";
+  const linkOk = inRoom ? room.status === "connected" : linkStatus === "connected";
   const message =
     turn === null
-      ? "Both boosters are open."
+      ? "Every booster of this round is open."
       : myTurn
         ? "Your pick — choose a booster and open it."
-        : aiTurn || waitingFriend
-          ? `${run.players[opp].name} is choosing…`
-          : `Click the booster ${run.players[opp].name} took.`;
+        : aiTurn || waitingOther
+          ? `${turnName} is choosing…`
+          : `Click the booster ${turnName} took.`;
+  const order = Array.from({ length: run.players.length }, (_, k) => run.players[((run.lastWinner ?? 0) + k) % run.players.length].name);
 
   return (
     <div className="pf-stage" style={{ maxWidth: 1240 }}>
       <div className="pf-eyebrow">
-        Boosters at stake · {winnerName} picks first
-        {friend && (
-          <span className={`pf-link ${linkStatus}`}>{linkStatus === "connected" ? `● linked with ${run.players[opp].name}` : "○ linking…"}</span>
-        )}
+        Boosters at stake · {run.players.length === 2 ? `${winnerName} picks first` : `order: ${order.join(" → ")}`}
+        {friend && <span className={`pf-link ${linkOk ? "connected" : "connecting"}`}>{linkOk ? "● linked" : "○ linking…"}</span>}
       </div>
       <h1 className="pf-title">{message}</h1>
       <p className="pf-sub">The same grid stays for the whole run. Collector Boosters glow.</p>
-      <div className={`pf-packwrap${waitingFriend ? " waiting" : ""}`}>
-      {waitingFriend && (
-        <div className="pf-waitveil">
-          <div className="box">
-            <div className="hourglass">⏳</div>
-            <b>Waiting for {run.players[opp].name}</b>
-            <span>
-              {linkStatus === "connected"
-                ? "Their booster disappears from the grid as soon as they choose it."
-                : `Connecting to ${run.players[opp].name}… (they need this screen open too)`}
-            </span>
-            {(slowLink || linkStatus !== "connected") && (
-              <button type="button" className="pf-btn-mini" onClick={() => setManual(true)}>
-                Can't connect? Mark their booster by hand
-              </button>
-            )}
+      <div className={`pf-packwrap${waitingOther ? " waiting" : ""}`}>
+        {waitingOther && (
+          <div className="pf-waitveil">
+            <div className="box">
+              <div className="hourglass">⏳</div>
+              <b>Waiting for {turnName}</b>
+              <span>{linkOk ? "Their booster disappears from the grid as soon as it is chosen." : "Connecting… (the other players need this screen open too)"}</span>
+              {(slowLink || !linkOk) && turnPlayer?.kind === "human" && (
+                <button type="button" className="pf-btn-mini" onClick={() => setManual(true)}>
+                  Can't connect? Mark their booster by hand
+                </button>
+              )}
+            </div>
           </div>
+        )}
+        <div className="pf-packgrid">
+          {run.grid.map((gp, i) => {
+            const set = gridSet(data, gp);
+            const taken = gp.taker !== null;
+            return (
+              <button
+                key={i}
+                type="button"
+                className={`pf-packtile${gp.kind === "collector" ? " special" : ""}${taken ? " taken" : ""}`}
+                style={packColors(gp.set)}
+                disabled={taken || busy || turn === null || (aiTurn && aiAuthority) || waitingOther}
+                onClick={() => void take(i)}
+              >
+                <div className="wrap">
+                  <span className="num">#{i + 1}</span>
+                  <div className="kind">{PRODUCT_LABEL[gp.kind]}</div>
+                  <div className="set">{set?.name ?? gp.set.toUpperCase()}</div>
+                  <div className="yr">{set?.year ?? ""}</div>
+                </div>
+                {taken && <span className="owner">{run.players[gp.taker!]?.name}</span>}
+              </button>
+            );
+          })}
         </div>
-      )}
-      <div className="pf-packgrid">
-        {run.grid.map((gp, i) => {
-          const set = gridSet(data, gp);
-          const taken = gp.taker !== null;
-          return (
-            <button
-              key={i}
-              type="button"
-              className={`pf-packtile${gp.kind === "collector" ? " special" : ""}${taken ? " taken" : ""}`}
-              style={packColors(gp.set)}
-              disabled={taken || busy || turn === null || aiTurn || waitingFriend}
-              onClick={() => void take(i)}
-            >
-              <div className="wrap">
-                <span className="num">#{i + 1}</span>
-                <div className="kind">{PRODUCT_LABEL[gp.kind]}</div>
-                <div className="set">{set?.name ?? gp.set.toUpperCase()}</div>
-                <div className="yr">{set?.year ?? ""}</div>
-              </div>
-              {taken && <span className="owner">{run.players[gp.taker!].name}</span>}
-            </button>
-          );
-        })}
-      </div>
       </div>
       {turn === null && (
         <div className="pf-row">
           {!synced && (
             <span className="pf-hint">
-              Sending your pick to {run.players[opp].name}…{" "}
+              Sending your picks to the others…{" "}
               <button type="button" className="pf-btn-mini" onClick={() => setSkipSync(true)}>
                 Continue anyway
               </button>
@@ -1389,15 +1595,15 @@ function StarterPacks({
 // ── end ─────────────────────────────────────────────────────────────────────
 
 function StarterEnd({ run, onNew }: { run: StarterRun; onNew: () => void }) {
-  const [a, b] = run.players;
-  const champion = a.wins === b.wins ? null : a.wins > b.wins ? a : b;
+  const sides = [...new Set(run.players.map((_, i) => sideLead(run, i)))]
+    .map((lead) => ({ lead, name: sideName(run, lead), wins: run.players[lead].wins, losses: run.players[lead].losses }))
+    .sort((a, b) => b.wins - a.wins || a.losses - b.losses);
+  const champion = sides.length > 1 && sides[0].wins > sides[1].wins ? sides[0] : null;
   return (
     <div className="pf-stage">
       <div className="pf-eyebrow">{run.history.length} games</div>
-      <h1 className="pf-title">{champion ? `${champion.name} wins the Starter` : "A perfect tie"}</h1>
-      <p className="pf-sub">
-        {a.name} {a.wins}–{a.losses} · {b.name} {b.wins}–{b.losses}
-      </p>
+      <h1 className="pf-title">{champion ? `${champion.name} win${starterTeams(run) ? "" : "s"} the Starter` : "A perfect tie"}</h1>
+      <p className="pf-sub">{sides.map((x) => `${x.name} ${x.wins}–${x.losses}`).join(" · ")}</p>
       <div className="pf-panel" style={{ maxWidth: 520, margin: "0 auto" }}>
         <table className="pf-table">
           <thead>
@@ -1410,7 +1616,7 @@ function StarterEnd({ run, onNew }: { run: StarterRun; onNew: () => void }) {
             {run.history.map((h) => (
               <tr key={h.game}>
                 <td>{h.game + 1}</td>
-                <td>{h.winner === null ? "—" : run.players[h.winner].name}</td>
+                <td>{h.winner === null ? "—" : sideName(run, h.winner)}</td>
               </tr>
             ))}
           </tbody>

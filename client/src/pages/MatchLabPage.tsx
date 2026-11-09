@@ -45,9 +45,9 @@ const CUSTOM = "__custom__";
 type First = "random" | "play" | "draw";
 type LabFormat = "normal" | "commander" | "2hg" | "archenemy" | "planechase";
 const FORMATS: { id: LabFormat; label: string; spec: NonNullable<MatchSpec["format"]>; note: string }[] = [
-  { id: "normal", label: "Normal", spec: "Freeform", note: "Any cards, any number of copies." },
+  { id: "normal", label: "Normal (free for all)", spec: "Freeform", note: "Any cards, any number of copies. At 3-4 players everyone plays for themselves." },
   { id: "commander", label: "👑 Commander", spec: "Commander", note: "Each deck has a commander in the command zone (commander damage, 40 life unless you set another). Any cards, any number of copies." },
-  { id: "2hg", label: "Two-Headed Giant", spec: "TwoHeadedGiant", note: "4 players in two teams of two (seats 1+2 against 3+4), 30 life per team. Decks of at least 60 cards." },
+  { id: "2hg", label: "Teams 2 vs 2 (Two-Headed Giant)", spec: "TwoHeadedGiant", note: "4 players in two teams of two (seats 1+2 against 3+4), 30 life per team, shared turns. Any cards, any deck size." },
   { id: "archenemy", label: "Archenemy", spec: "Archenemy", note: "Seat 1 (the host / you) is the archenemy with a scheme deck; everyone else plays together against them. Decks of at least 60 cards." },
   { id: "planechase", label: "Planechase", spec: "Planechase", note: "A shared planar deck, roll the planar die. Online only (no AI in Planechase). Decks of at least 60 cards." },
 ];
@@ -70,7 +70,7 @@ interface LabSettings {
   seats: SeatCfg[];
 }
 
-const newSeat = (kind: "ai" | "friend" = "ai"): SeatCfg => ({ kind, pick: CUSTOM, text: "", difficulty: "Medium" });
+const newSeat = (kind: "ai" | "friend" = "friend"): SeatCfg => ({ kind, pick: CUSTOM, text: "", difficulty: "Medium" });
 
 function decodeB64Url(value: string): string {
   const b64 = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -191,11 +191,11 @@ export function MatchLabPage() {
   const fmt = FORMATS.find((f) => f.id === format) ?? FORMATS[0];
   const commander = format === "commander";
   const noAi = format === "planechase";
-  const minDeck = engineDeckMinimum(fmt.spec);
+  const minDeck = engineDeckMinimum(fmt.spec, Math.max(2, guestRules?.players ?? s.players));
   const deckOk = (d: ImportedDeck | null) => importReady(d, commander) && (d?.size ?? 0) + (d?.commanders.length ?? 0) >= minDeck;
   const youReady = deckOk(you);
   const roomMe: RoomMe | null = s.mode === "friend" ? { name: s.name.trim() || "Player", deck: youReady && you ? you.id : null, commander } : null;
-  const hub = useRoomHub(roomMe);
+  const hub = useRoomHub("test", roomMe);
   const inRoom = s.mode === "friend" && !!hub.room;
   const host = hub.room?.role === "host";
   const hostSettings = hub.latest.settings as { format?: LabFormat; players?: number } | undefined;
@@ -224,7 +224,7 @@ export function MatchLabPage() {
     const me = playerOf(data, s.name.trim() || "Player", "human", you, commander);
     // The AI seats belong to the table of the host (or of the game vs AI): a friend joining brings only their deck.
     const ownsTable = s.mode === "ai" || host;
-    const aiSeats: TableSeat[] = ownsTable ? aiIdx.filter((i) => aiDecks[i]).map((i) => ({ player: playerOf(data, `AI ${i + 2}`, "ai", aiDecks[i]!, commander), difficulty: seats[i].difficulty })) : [];
+    const aiSeats: TableSeat[] = ownsTable ? aiIdx.filter((i) => aiDecks[i]).map((i) => ({ player: playerOf(data, `AI ${i + 2}`, "ai", aiDecks[i]!, commander), difficulty: seats[i].difficulty, seatIndex: i + 1 })) : [];
     const opp = aiSeats[0]?.player ?? { ...me, name: "Friend", pool: [], main: [] };
     return {
       me,
@@ -253,6 +253,8 @@ export function MatchLabPage() {
       setError(e);
       setMatchKey(null);
     },
+    // Friends enter the game in the order they joined the room: each takes the seat the host sees for them.
+    seat: host ? undefined : Math.max(1, hub.players.findIndex((p) => p.id === hub.myId)),
   });
 
   const startAi = async () => {

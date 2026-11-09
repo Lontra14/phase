@@ -436,3 +436,18 @@
 .pf-seat-head b { font-family: "Cinzel"; letter-spacing: 0.08em; }
 .pf-hub-list { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.4rem 0; }
 .pf-hub-list div { display: flex; gap: 0.5rem; align-items: center; }
+/* Progression: boosters chosen by set */
+.pf-setpick { border: 1px solid rgba(201, 162, 75, 0.28); border-radius: 10px; padding: 0.6rem; background: rgba(8, 7, 14, 0.6); margin: 0.8rem 0 0.4rem; }
+.pf-setpick-chosen { display: flex; flex-wrap: wrap; gap: 0.35rem; min-height: 1.8rem; }
+.pf-setchip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.3rem 0.2rem 0.55rem; border-radius: 999px; border: 1px solid rgba(201, 162, 75, 0.45); background: rgba(201, 162, 75, 0.12); font-size: 0.82rem; }
+.pf-setchip small { color: var(--gold-bright, #e9c46a); font-weight: 700; }
+.pf-setchip i { color: var(--muted); font-style: normal; font-size: 0.72rem; }
+.pf-setchip button { border: none; background: rgba(0, 0, 0, 0.35); color: inherit; width: 1.3rem; height: 1.3rem; border-radius: 50%; cursor: pointer; line-height: 1; padding: 0; }
+.pf-setchip button:hover { background: rgba(214, 80, 62, 0.6); }
+.pf-setpick input { min-width: 0; }
+.pf-setpick-list { max-height: 230px; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 3px; }
+.pf-setpick-list button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 0.35rem 0.5rem; border-radius: 7px; border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer; min-width: 0; }
+.pf-setpick-list button:hover { background: rgba(201, 162, 75, 0.1); border-color: rgba(201, 162, 75, 0.3); }
+.pf-setpick-list b { font-weight: 600; font-size: 0.86rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-setpick-list small { color: var(--muted); font-size: 0.72rem; }
+.pf-versus .side > div { margin: 0.1rem 0; }

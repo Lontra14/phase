@@ -43,13 +43,23 @@ export function loadDeckCatalog(data: ProgData): Promise<CatalogDeck[]> {
       const out: CatalogDeck[] = [];
       try {
         const starters = await loadStarterDecks(data);
+        const line = (key: string, count: number) => {
+          const p = data.byKey.get(key);
+          // The precon's own printing travels as "(SET) number".
+          return p ? (p.set && p.cn ? `${count} ${p.card.name} (${p.set.code.toUpperCase()}) ${p.cn}` : `${count} ${p.card.name}`) : "";
+        };
         for (const d of starters.slice().reverse()) {
-          const lines = d.cards.map((c) => {
-            const p = data.byKey.get(c.key);
-            // The precon's own printing travels as "(SET) number".
-            return p ? (p.set && p.cn ? `${c.count} ${p.card.name} (${p.set.code.toUpperCase()}) ${p.cn}` : `${c.count} ${p.card.name}`) : "";
+          const lines = d.cards.map((c) => line(c.key, c.count)).filter(Boolean);
+          const cmd = d.commanderFormat && d.commanders?.length ? (d.commanderKeys ?? []).map((k) => line(k, 1)).filter(Boolean) : [];
+          out.push({
+            id: `starter:${d.id}`,
+            group: cmd.length ? "Commander precons" : "Starter precons",
+            name: d.name,
+            detail: `${cmd.length ? `${d.commanders!.join(" & ")} · ` : ""}${d.type} · ${d.year}`,
+            colors: d.colors,
+            commander: cmd.length > 0,
+            text: cmd.length ? ["Commander", ...cmd, "", "Deck", ...lines].join("\n") : lines.join("\n"),
           });
-          out.push({ id: `starter:${d.id}`, group: "Starter precons", name: d.name, detail: `${d.type} · ${d.year}`, colors: d.colors, commander: false, text: lines.filter(Boolean).join("\n") });
         }
       } catch {
         // no precons: the meta decks still load

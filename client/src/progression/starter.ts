@@ -1,12 +1,15 @@
-// Starter mode: two 60-card precons, a shared grid of boosters at stake.
+// Starter mode: 2 to 4 precons (or commander precons, or your own lists), a
+// shared grid of boosters at stake.
 //
 //   preview (read-only deck) → match (Bo1) → reward → packs → build → match … → done
 //
-// After each game: the loser picks a colour and gets a random card of that
-// colour from The List; the winner spins a wheel of the rarities in the deck
-// they played and adds one more copy of a card of that rarity. Then the winner
-// opens one booster from the grid, the loser another. When the grid is empty a
-// last game is played. Game 1: random starter; later games: the loser chooses.
+// After each game: every loser picks a colour and gets a random card of that
+// colour from The List; the winner (at team tables: both winners) spins a wheel
+// of the rarities in the deck they played and adds one more copy of a card of
+// that rarity. Then the winner opens one booster from the grid, then the others
+// in seat order after the winner. When the grid is empty a last game is played.
+// Game 1: random starter; later games: the loser chooses (tables of 3-4: the
+// player after the winner starts).
 
 import { autoBuild } from "./autobuild";
 import type { ProgData, ProgPrint, Rarity } from "./data";
@@ -16,7 +19,7 @@ import type { Pack, ProductKind } from "./packs";
 import { productsFor } from "./packs";
 import { makeRng, randomSeed } from "./rng";
 import type { Basic, Owned, PlayerState, Reward, Slot } from "./run";
-import { STARTER_AUTOSAVE_KEY, decodeCode, emptyBasics, encodeCode, ownedOf } from "./run";
+import { STARTER_AUTOSAVE_KEY, decodeCode, emptyBasics, encodeCode, ownedOf, sameSide, sideLead } from "./run";
 import type { StarterDeck } from "./starterData";
 import { deckOwned } from "./starterData";
 
@@ -39,22 +42,26 @@ export interface StarterRun {
   mode: "ai" | "friend";
   difficulty: string;
   startingLife: number | null;
-  decks: [string, string];
+  decks: string[];
   grid: GridPack[];
   /** Index of the current / next game (0-based). */
   game: number;
   phase: StarterPhase;
   me: Slot;
-  players: [PlayerState, PlayerState];
+  /** 2 to 4 players: the host first, then the friends and the AIs in seat order. */
+  players: PlayerState[];
+  /** Tables of 4: two teams (seats 1+2 against 3+4, Two-Headed Giant). */
+  teams?: boolean;
   history: { game: number; winner: Slot | null }[];
   /** Winner and loser of the last game (pack order, rewards, who chooses the start). */
   lastWinner: Slot | null;
   /** Who starts the next game (chosen by the loser); null = random. */
   nextFirst: Slot | null;
   /** Main-deck size of each starting deck (imported lists can be shorter than 60). */
-  startSize?: [number, number];
+  startSize?: number[];
   pendingGameId: string | null;
-  pendingResult: { myWins: number; oppWins: number } | null;
+  /** Result written by the watcher; `winner` = the winner's seat. */
+  pendingResult: { myWins: number; oppWins: number; winner?: number } | null;
 }
 
 export interface StarterSettings {
@@ -66,7 +73,7 @@ export interface StarterSettings {
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
-export const totalGames = (run: StarterRun): number => run.grid.length / 2 + 1;
+export const totalGames = (run: StarterRun): number => Math.ceil(run.grid.length / run.players.length) + 1;
 export const packsLeft = (run: StarterRun): number => run.grid.filter((p) => p.taker === null).length;
 
 function newPlayer(name: string, kind: "human" | "ai", pool: Owned[]): PlayerState {
@@ -120,8 +127,8 @@ export function foldBasics(data: ProgData, p: PlayerState): PlayerState {
 
 /** Runs saved before basics went to the tray: fold them now (null = nothing to do). */
 export function foldStarterBasics(data: ProgData, run: StarterRun): StarterRun | null {
-  const players = run.players.map((p) => foldBasics(data, p)) as [PlayerState, PlayerState];
-  return players[0] === run.players[0] && players[1] === run.players[1] ? null : { ...run, players };
+  const players = run.players.map((p) => foldBasics(data, p));
+  return players.every((p, i) => p === run.players[i]) ? null : { ...run, players };
 }
 
 /** Random boosters of any set and product, duplicates allowed. */
@@ -139,19 +146,45 @@ function makeGrid(data: ProgData, n: number, seed: string): GridPack[] {
   return out;
 }
 
-/** Imported commander lists: the commander(s) go to the command zone (kept out of the pool). */
-function withCommander(p: PlayerState, deck: StarterDeck): PlayerState {
-  return deck.commanderFormat && deck.commanders?.length ? { ...p, commander: deck.commanders.slice(0, 2) } : p;
+/** Commander decks: the commander(s) go to the command zone (kept out of the pool), with the precon's printing. */
+function withCommander(data: ProgData, p: PlayerState, deck: StarterDeck): PlayerState {
+  if (!deck.commanderFormat || !deck.commanders?.length) return p;
+  const cardArt: Record<string, string> = {};
+  deck.commanderKeys?.forEach((key, i) => {
+    const id = data.byKey.get(key)?.id ?? "";
+    const name = deck.commanders?.[i];
+    if (name && id.length === 32) cardArt[name] = `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
+  });
+  return { ...p, commander: deck.commanders.slice(0, 2), ...(Object.keys(cardArt).length ? { cardArt } : {}) };
 }
 
-/** Rules of a Starter game: Commander when both players have a commander, else Limited. */
+/** Whether the table plays in two teams (4 players only). */
+export const starterTeams = (run: Pick<StarterRun, "teams" | "players">): boolean => !!run.teams && run.players.length === 4;
+
+/** Deck rules of a Starter game: Commander when every player has a commander, else Limited. */
 export function starterFormat(run: StarterRun): "Commander" | "Limited" {
-  return run.players[0].commander?.length && run.players[1].commander?.length ? "Commander" : "Limited";
+  return run.players.every((p) => p.commander?.length) ? "Commander" : "Limited";
 }
 
-export function createStarter(data: ProgData, s: StarterSettings, names: [string, string], decks: [StarterDeck, StarterDeck]): StarterRun {
+/** The engine rules of a Starter game (team tables: Two-Headed Giant, with commanders: its Commander version). */
+export function starterTableFormat(run: StarterRun): "Commander" | "Limited" | "TwoHeadedGiant" | "TwoHeadedGiantCommander" {
+  const f = starterFormat(run);
+  if (!starterTeams(run)) return f;
+  return f === "Commander" ? "TwoHeadedGiantCommander" : "TwoHeadedGiant";
+}
+
+export function createStarter(
+  data: ProgData,
+  s: StarterSettings & { teams?: boolean },
+  names: string[],
+  decks: StarterDeck[],
+  kinds?: ("human" | "ai")[],
+): StarterRun {
   const seed = randomSeed();
-  const packs = Math.max(2, Math.round(s.packs / 2) * 2);
+  const n = names.length;
+  // Every round each player opens one booster: the grid holds a multiple of the players.
+  const packs = Math.max(n, Math.round(s.packs / n) * n);
+  const kindOf = (i: number): "human" | "ai" => kinds?.[i] ?? (i === 0 ? "human" : s.mode === "ai" ? "ai" : "human");
   return {
     v: 1,
     kind: "starter",
@@ -161,21 +194,19 @@ export function createStarter(data: ProgData, s: StarterSettings, names: [string
     mode: s.mode,
     difficulty: s.difficulty,
     startingLife: s.startingLife,
-    decks: [decks[0].id, decks[1].id],
+    decks: decks.map((d) => d.id),
     grid: makeGrid(data, packs, seed),
     game: 0,
     phase: "preview",
     me: 0,
-    players: [
-      foldBasics(data, withCommander(newPlayer(names[0], "human", deckOwned(data, decks[0])), decks[0])),
-      foldBasics(data, withCommander(newPlayer(names[1], s.mode === "ai" ? "ai" : "human", deckOwned(data, decks[1])), decks[1])),
-    ],
+    players: names.map((name, i) => foldBasics(data, withCommander(data, newPlayer(name, kindOf(i), deckOwned(data, decks[i])), decks[i]))),
+    ...(s.teams && n === 4 ? { teams: true } : {}),
     history: [],
     lastWinner: null,
     nextFirst: null,
     pendingGameId: null,
     pendingResult: null,
-    startSize: [deckOwned(data, decks[0]).length, deckOwned(data, decks[1]).length],
+    startSize: decks.map((d) => deckOwned(data, d).length),
   };
 }
 
@@ -195,14 +226,14 @@ export async function openGridPack(data: ProgData, run: StarterRun, i: number): 
   return f.openProduct(set, gp.kind, makeRng(run.seed, "pack", i));
 }
 
-/** Who picks now in the packs phase: winner first, then loser; null = both done. */
+/** Who picks now in the packs phase: the winner first, then the others in seat order after them; null = all done. */
 export function picker(run: StarterRun): Slot | null {
   const round = run.game - 1;
-  const taken = run.grid.filter((p) => p.round === round);
+  const taken = run.grid.filter((p) => p.round === round).length;
+  const n = run.players.length;
   const winner = run.lastWinner ?? 0;
-  if (taken.length === 0) return winner;
-  if (taken.length === 1) return packsLeft(run) > 0 ? ((1 - winner) as Slot) : null;
-  return null;
+  if (taken >= n || packsLeft(run) === 0) return null;
+  return (winner + taken) % n;
 }
 
 /** Record that `slot` took booster #i; its cards join that player's collection (when known here). */
@@ -223,11 +254,12 @@ export async function takePack(data: ProgData, run: StarterRun, i: number, slot:
   return { run: next, pack };
 }
 
-/** The AI takes a random booster still in the grid. */
-export async function aiTakePack(data: ProgData, run: StarterRun): Promise<{ run: StarterRun; index: number; pack: Pack | null }> {
+/** An AI seat takes a random booster still in the grid. */
+export async function aiTakePack(data: ProgData, run: StarterRun, slot: Slot): Promise<{ run: StarterRun; index: number; pack: Pack | null }> {
   const free = run.grid.map((p, i) => (p.taker === null ? i : -1)).filter((i) => i >= 0);
-  const index = makeRng(run.seed, "ai-pack", run.game).pick(free);
-  const res = await takePack(data, run, index, (1 - run.me) as Slot);
+  // Two players: the same seed as before (older runs keep their AI picks).
+  const index = (run.players.length === 2 ? makeRng(run.seed, "ai-pack", run.game) : makeRng(run.seed, "ai-pack", run.game, slot)).pick(free);
+  const res = await takePack(data, run, index, slot);
   return { ...res, index };
 }
 
@@ -291,32 +323,41 @@ function wheelReward(data: ProgData, run: StarterRun, slot: Slot): Reward {
   return { kind: "wheel", wheel, rarity, choices: byRarity.get(rarity) ?? [], spun: false, done: false };
 }
 
-/** Record a finished game; set up my reward (the AI settles its own at once). */
-export async function applyStarterResult(data: ProgData, run: StarterRun, myWins: number, oppWins: number): Promise<StarterRun> {
+/** The seat that won the result the watcher stored (older results: from my wins / their wins). */
+export function starterWinner(run: StarterRun): Slot | null {
+  const r = run.pendingResult;
+  if (!r) return null;
+  if (typeof r.winner === "number" && r.winner >= 0 && r.winner < run.players.length) return r.winner;
+  if (r.myWins === r.oppWins) return null;
+  return r.myWins > r.oppWins ? run.me : run.players.findIndex((_, i) => i !== run.me);
+}
+
+/** Record a finished game (`winner` = seat; team tables: either winner); set up my reward (the AIs settle theirs at once). */
+export async function applyStarterResult(data: ProgData, run: StarterRun, winnerSeat: Slot | null): Promise<StarterRun> {
   await resolveSupport(data.list.map((p) => p.card.name));
   const next = clone(run);
   const me = next.me;
-  const opp = (1 - me) as Slot;
-  const winner: Slot | null = myWins === oppWins ? null : myWins > oppWins ? me : opp;
+  const n = next.players.length;
+  // Team tables: the team counts as one winner (its first seat picks the first booster).
+  const winner: Slot | null = winnerSeat === null ? null : sideLead(next, winnerSeat);
+  const won = (slot: Slot) => winner !== null && sameSide(next, slot, winner);
   next.history = next.history.filter((h) => h.game !== next.game).concat({ game: next.game, winner });
-  if (winner !== null) {
-    next.players[winner].wins += 1;
-    next.players[(1 - winner) as Slot].losses += 1;
-  }
+  if (winner !== null) next.players.forEach((p, i) => (won(i) ? (p.wins += 1) : (p.losses += 1)));
   next.lastWinner = winner ?? next.lastWinner ?? me;
   next.pendingGameId = null;
   next.pendingResult = null;
-  next.nextFirst = null;
+  // Two players: the loser chooses who starts. Tables of 3-4: the player after the winner starts.
+  next.nextFirst = n > 2 && winner !== null ? (winner + (starterTeams(next) ? 2 : 1)) % n : null;
   const last = next.game + 1 >= totalGames(next) || packsLeft(next) === 0;
   next.game += 1;
   if (last) {
     next.phase = "done";
     return next;
   }
-  next.players[me].reward = winner === me ? wheelReward(data, next, me) : { kind: "list", done: false };
-  const o = next.players[opp];
-  if (o.kind === "ai" && o.pool) {
-    if (winner === opp) {
+  next.players[me].reward = won(me) ? wheelReward(data, next, me) : { kind: "list", done: false };
+  next.players.forEach((o, opp) => {
+    if (opp === me || o.kind !== "ai" || !o.pool) return;
+    if (won(opp)) {
       const r = wheelReward(data, next, opp);
       const key = r.choices?.length ? makeRng(next.seed, next.game, opp, "ai-wheel").pick(r.choices) : null;
       const print = key ? data.byKey.get(key) : undefined;
@@ -331,10 +372,10 @@ export async function applyStarterResult(data: ProgData, run: StarterRun, myWins
       const card = listCardFor(data, next, opp, color);
       if (card) o.pool.push(ownedOf(card, engineName(card, { allowPartial: false })));
       o.reward = { kind: "list", color, list: card ? [ownedOf(card, card.card.name)] : [], done: true };
-      // The AI lost: it chooses to play first next game.
-      next.nextFirst = opp;
+      // The AI lost a game of two: it chooses to play first next game.
+      if (n === 2) next.nextFirst = opp;
     }
-  }
+  });
   next.phase = "reward";
   return next;
 }
@@ -371,8 +412,7 @@ export function claimStarterReward(data: ProgData, run: StarterRun, choice: stri
  * colour's List card they could have received. Wheel picks are extra copies of
  * deck cards, already covered.
  */
-export function opponentStandIn(data: ProgData, run: StarterRun): PlayerState {
-  const slot = (1 - run.me) as Slot;
+export function opponentStandIn(data: ProgData, run: StarterRun, slot: Slot = run.players.findIndex((_, i) => i !== run.me)): PlayerState {
   const opp = run.players[slot];
   if (opp.kind === "ai") return opp;
   const extras: Owned[] = [];

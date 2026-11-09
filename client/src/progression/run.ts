@@ -18,7 +18,8 @@ export type Basics = Record<Basic, number>;
 export const emptyBasics = (): Basics => ({ Plains: 0, Island: 0, Swamp: 0, Mountain: 0, Forest: 0, Wastes: 0 });
 
 export type Phase = "opening" | "pool" | "build" | "match" | "reward" | "timeline" | "done";
-export type Slot = 0 | 1;
+/** A seat at the table: 0 = the first player (host), up to 3 at tables of 4. */
+export type Slot = number;
 
 /** One owned copy: printing key + engine card name (name kept so lists survive data refreshes). */
 export interface Owned {
@@ -61,6 +62,8 @@ export interface PlayerState {
   landArt?: Partial<Record<Basic, string>>;
   /** Commander decks: the commander(s), kept out of the pool (command zone in Commander games). */
   commander?: string[];
+  /** Scryfall id (dashed) of the printing of cards outside the pool (a precon's commander). */
+  cardArt?: Record<string, string>;
 }
 
 export interface HistoryEntry {
@@ -80,6 +83,19 @@ export interface RunSettings {
   allowPartial: boolean;
   difficulty: string;
   startingLife: number | null;
+  /** Games per block: best of 1, 3 or 5 (older runs: 3). */
+  bestOf?: number;
+  /** Tables of 4: two teams (seats 1+2 against 3+4, Two-Headed Giant) instead of everyone for themselves. */
+  teams?: boolean;
+  /** Boosters chosen by set instead of by year: the sets in play order, `blockSize` of them per block. */
+  packSets?: PackSetRef[];
+}
+
+/** A booster set picked for a run (code as in the card index). */
+export interface PackSetRef {
+  code: string;
+  name: string;
+  year: number;
 }
 
 export interface RunState extends RunSettings {
@@ -91,22 +107,92 @@ export interface RunState extends RunSettings {
   phase: Phase;
   /** Which slot this device plays. */
   me: Slot;
-  players: [PlayerState, PlayerState];
+  /** 2 to 4 players: the host first, then the friends, then the AIs. */
+  players: PlayerState[];
   history: HistoryEntry[];
-  /** Set while a Bo3 is being played (the result watcher matches on it). */
+  /** Games won by each player in this block's series (best of 1/3/5). */
+  series?: number[];
+  /** Set while a game is being played (the result watcher matches on it). */
   pendingGameId: string | null;
-  /** Result written by the watcher (or by hand) and not yet applied. */
-  pendingResult: { myWins: number; oppWins: number } | null;
+  /** Result written by the watcher (or by hand) and not yet applied; `winner` = the winner's seat. */
+  pendingResult: { myWins: number; oppWins: number; winner?: number } | null;
 }
 
-export function blocksOf(s: Pick<RunSettings, "startYear" | "endYear" | "blockSize">): [number, number][] {
+type BlockSettings = Pick<RunSettings, "startYear" | "endYear" | "blockSize" | "packSets">;
+
+/** The chosen sets of each block (runs by set). */
+export function setChunks(s: BlockSettings): PackSetRef[][] {
+  const size = Math.max(1, Math.min(5, Math.round(s.blockSize)));
+  const out: PackSetRef[][] = [];
+  const sets = s.packSets ?? [];
+  for (let i = 0; i < sets.length; i += size) out.push(sets.slice(i, i + size));
+  return out;
+}
+
+/** The years of every block (runs by set: the release years of each block's sets). */
+export function blocksOf(s: BlockSettings): [number, number][] {
+  if (s.packSets?.length) {
+    return setChunks(s).map((c) => [Math.min(...c.map((x) => x.year)), Math.max(...c.map((x) => x.year))] as [number, number]);
+  }
   const out: [number, number][] = [];
   const size = Math.max(1, Math.min(5, Math.round(s.blockSize)));
   for (let y = s.startYear; y <= s.endYear; y += size) out.push([y, Math.min(s.endYear, y + size - 1)]);
   return out;
 }
 
-export function blockYears(run: RunState): [number, number] {
+/** Set codes of a block, or null when the run goes by years. */
+export function blockSetCodes(run: BlockSettings & { block: number }, block = run.block): string[] | null {
+  if (!run.packSets?.length) return null;
+  const chunks = setChunks(run);
+  return (chunks[Math.min(block, chunks.length - 1)] ?? []).map((x) => x.code);
+}
+
+/** What a block is called: its years, or its sets for runs by set. */
+export function blockLabel(s: BlockSettings, block: number): string {
+  if (s.packSets?.length) {
+    const c = setChunks(s)[block] ?? [];
+    return c.length > 2 ? `${c[0].name} +${c.length - 1}` : c.map((x) => x.name).join(" + ");
+  }
+  const blocks = blocksOf(s);
+  return yearsLabel(blocks[Math.min(block, blocks.length - 1)] ?? [s.startYear, s.endYear]);
+}
+
+/** Short block tags for the timeline (set codes for runs by set). */
+export function blockTags(s: BlockSettings): string[] {
+  if (s.packSets?.length) return setChunks(s).map((c) => c.map((x) => x.code.toUpperCase()).join("+"));
+  return blocksOf(s).map(yearsLabel);
+}
+
+/** The whole run in a few words. */
+export function runLabel(s: BlockSettings): string {
+  if (s.packSets?.length) return `${s.packSets.length} chosen set${s.packSets.length === 1 ? "" : "s"}`;
+  return yearsLabel([s.startYear, s.endYear]);
+}
+
+// ── Sides (teams of two at tables of 4) ─────────────────────────────────────
+
+/** The side a seat plays for: its team (0 or 1) at team tables, else the seat itself. */
+export function sideOf(run: Pick<RunSettings, "teams"> & { players: unknown[] }, seat: Slot): number {
+  return run.teams && run.players.length === 4 ? (seat < 2 ? 0 : 1) : seat;
+}
+
+export function sameSide(run: Pick<RunSettings, "teams"> & { players: unknown[] }, a: Slot, b: Slot): boolean {
+  return sideOf(run, a) === sideOf(run, b);
+}
+
+/** The first seat of a side (the seat a team's results are counted on). */
+export function sideLead(run: Pick<RunSettings, "teams"> & { players: unknown[] }, seat: Slot): Slot {
+  return run.teams && run.players.length === 4 ? (seat < 2 ? 0 : 2) : seat;
+}
+
+/** "Anna" or, at team tables, "Anna & Bruno". */
+export function sideName(run: Pick<RunSettings, "teams"> & { players: { name: string }[] }, seat: Slot): string {
+  if (!(run.teams && run.players.length === 4)) return run.players[seat]?.name ?? "?";
+  const lead = sideLead(run, seat);
+  return `${run.players[lead].name} & ${run.players[lead + 1].name}`;
+}
+
+export function blockYears(run: BlockSettings & { block: number }): [number, number] {
   const blocks = blocksOf(run);
   return blocks[Math.min(run.block, blocks.length - 1)];
 }
@@ -130,8 +216,10 @@ function newPlayer(name: string, kind: "human" | "ai", known: boolean): PlayerSt
   };
 }
 
-export function createRun(settings: RunSettings, names: [string, string]): RunState {
+/** A new run. `kinds`: who plays each seat (the AIs' collections are known to every device). */
+export function createRun(settings: RunSettings, names: string[], kinds?: ("human" | "ai")[]): RunState {
   const ai = settings.mode === "ai";
+  const seatKinds = kinds ?? names.map((_, i) => (i === 0 ? "human" : ai ? "ai" : "human"));
   return {
     ...settings,
     v: 1,
@@ -141,7 +229,8 @@ export function createRun(settings: RunSettings, names: [string, string]): RunSt
     block: 0,
     phase: "opening",
     me: 0,
-    players: [newPlayer(names[0], "human", true), newPlayer(names[1], ai ? "ai" : "human", ai)],
+    players: names.map((n, i) => newPlayer(n, seatKinds[i], i === 0 || seatKinds[i] === "ai")),
+    series: names.map(() => 0),
     history: [],
     pendingGameId: null,
     pendingResult: null,
@@ -275,7 +364,7 @@ export async function decodeRun(code: string): Promise<RunState> {
     bytes = await pipeThrough(bytes, new DecompressionStream("gzip"));
   }
   const run = JSON.parse(new TextDecoder().decode(bytes)) as RunState;
-  if (!run || run.v !== 1 || !Array.isArray(run.players) || run.players.length !== 2) {
+  if (!run || run.v !== 1 || !Array.isArray(run.players) || run.players.length < 2 || run.players.length > 4) {
     throw new Error("The save code is damaged or from another version.");
   }
   return run;

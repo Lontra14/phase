@@ -235,10 +235,17 @@ export function useAutoMatchRoom(opts: {
   host: () => Promise<unknown>;
   join: (code: string) => Promise<unknown>;
   onError: (e: string) => void;
+  /**
+   * Tables of 3-4 (Starter, Progression): the guest's place among the friends
+   * (1 = first friend). Friends enter the game one after the other, in this
+   * order, so each one gets the same seat in the game as in the run.
+   */
+  seat?: number;
 }): { waiting: string; restart: () => void; retry: () => void; stuck: boolean } {
   const { state, matchKey, enabled } = opts;
   const hostingStatus = useMultiplayerStore((s) => s.hostingStatus);
   const hostGameCode = useMultiplayerStore((s) => s.hostGameCode);
+  const joinedGuests = useMultiplayerStore((s) => (s.playerSlots ?? []).filter((p: { kind?: { type?: string } }) => p?.kind?.type === "JoinedHuman").length);
   const [round, setRound] = useState(0);
   const [stuck, setStuck] = useState(false);
   const started = useRef<string>("");
@@ -271,6 +278,11 @@ export function useAutoMatchRoom(opts: {
     }, 1200);
     return () => window.clearTimeout(t);
   }, [enabled, role, hostingStatus, hostGameCode, matchKey, send]);
+  // Host: how many friends are already in the game room (the next one enters after them).
+  useEffect(() => {
+    if (!enabled || role !== "host" || hostingStatus !== "waiting" || !hostGameCode) return;
+    send({ k: "seated", key: matchKey, code: hostGameCode, n: joinedGuests });
+  }, [enabled, role, hostingStatus, hostGameCode, matchKey, send, joinedGuests]);
   // Host: still waiting long after the code went out (the friend is stuck): offer a restart.
   useEffect(() => {
     if (role !== "host" || hostingStatus !== "waiting" || !hostGameCode) {
@@ -284,8 +296,10 @@ export function useAutoMatchRoom(opts: {
   const m = state.latest.match as { key?: string; code?: string } | undefined;
   const mKey = m?.key;
   const mCode = m?.code;
+  const seated = state.latest.seated as { key?: string; code?: string; n?: number } | undefined;
+  const myTurn = !opts.seat || opts.seat <= 1 || (seated?.key === mKey && seated?.code === mCode && (seated?.n ?? 0) >= opts.seat - 1);
   useEffect(() => {
-    if (!enabled || role !== "guest" || !mKey || mKey !== matchKey || !mCode) return;
+    if (!enabled || role !== "guest" || !mKey || mKey !== matchKey || !mCode || !myTurn) return;
     const id = `${mKey}:${mCode}`;
     // A code is joined by itself only once, also after coming back from the game
     // page (a failed game would otherwise send the guest back in, in a loop).
@@ -302,7 +316,7 @@ export function useAutoMatchRoom(opts: {
       });
     }, 1500);
     return () => window.clearTimeout(t);
-  }, [enabled, role, mKey, mCode, matchKey, round]);
+  }, [enabled, role, mKey, mCode, matchKey, round, myTurn]);
 
   const restart = () => {
     if (hostingStatus !== "idle") useMultiplayerStore.getState().cancelHosting();
@@ -330,7 +344,12 @@ export function useAutoMatchRoom(opts: {
       retry,
       stuck,
     };
-  return { waiting: m && m.key === matchKey ? "Joining the game…" : "Waiting for the host to open the game room…", restart, retry, stuck: false };
+  return {
+    waiting: m && m.key === matchKey ? (myTurn ? "Joining the game…" : "Waiting for the friends before you to enter the game…") : "Waiting for the host to open the game room…",
+    restart,
+    retry,
+    stuck: false,
+  };
 }
 
 /** Messages of the online play (errors, the room did not open…), on the mode pages too. */

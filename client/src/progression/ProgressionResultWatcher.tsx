@@ -36,6 +36,8 @@ export function ProgressionResultWatcher(): null {
         const myId = run.mode === "ai" ? 0 : (useMultiplayerStore.getState().activePlayerId ?? 0);
         let myWins: number;
         let oppWins: number;
+        // The winner's seat (engine player id): tables of 3-4 seat every player as in the run.
+        const winnerId = (waitingFor.data as { winner?: number | null }).winner ?? null;
         if (score && score.p0_wins + score.p1_wins > 0) {
           myWins = myId === 0 ? score.p0_wins : score.p1_wins;
           oppWins = myId === 0 ? score.p1_wins : score.p0_wins;
@@ -47,7 +49,7 @@ export function ProgressionResultWatcher(): null {
         }
         if (myWins === oppWins) continue;
         try {
-          localStorage.setItem(key, JSON.stringify({ ...run, pendingResult: { myWins, oppWins } }));
+          localStorage.setItem(key, JSON.stringify({ ...run, pendingResult: { myWins, oppWins, ...(winnerId != null ? { winner: winnerId } : {}) } }));
         } catch {
           // ignore
         }

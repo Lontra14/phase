@@ -5,7 +5,7 @@
 
 import { Navigate, useLocation, useNavigate } from "react-router";
 
-import { CHESS_RUN_KEY, STARTER_AUTOSAVE_KEY, blockYears, blocksOf, loadAutosave, pendingMatchRoute, yearsLabel } from "../progression/run";
+import { CHESS_RUN_KEY, STARTER_AUTOSAVE_KEY, blockLabel, blocksOf, loadAutosave, pendingMatchRoute } from "../progression/run";
 import "../progression/progression.css";
 import { CardBackButton } from "../progression/CardBackPicker";
 
@@ -56,11 +56,11 @@ export function HomePage() {
               <div className="pf-eyebrow">A journey through Magic's history</div>
               <h2>Progression</h2>
               <p>
-                Sealed boosters year by year from 1993 to today, deck builder, best-of-three matches. Losers open The List, winners spin the Wheel of Fortune.
+                Sealed boosters year by year (or the sets you choose), deck builder, tables of 2 to 4 with best of 1, 3 or 5. Losers open The List, winners spin the Wheel of Fortune.
               </p>
               <span className="tag">
                 {run && run.phase !== "done"
-                  ? `Continue · block ${run.block + 1}/${blocks.length} · ${yearsLabel(blockYears(run))} ▸`
+                  ? `Continue · block ${run.block + 1}/${blocks.length} · ${blockLabel(run, run.block)} ▸`
                   : "Begin ▸"}
               </span>
             </button>

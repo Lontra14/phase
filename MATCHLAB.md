@@ -18,8 +18,11 @@ The match itself is the stock phase.rs board, rules engine and AI.
 
 ## Progression
 
-A run through Magic's history. Settings: start year, end year (1993 → today), years per block (1–5), packs per sealed,
-vs AI or vs a friend.
+A run through Magic's history. Settings: the boosters **by years** (start year, end year, years per block 1–5) or
+**chosen by set** (search the sets, pick them in play order, 1–5 sets per block, "By date" / "Shuffle" / "+ 4
+random"), packs per sealed, games per block (**best of 1, 3 or 5**), and the table: **2 to 4 players**, vs AI or vs
+friends online (each seat a friend or an AI; at 4, **free for all** or **teams 2 vs 2** = Two-Headed Giant, seats
+1+2 against 3+4).
 
 Each block:
 
@@ -30,11 +33,13 @@ Each block:
    common. Only cards the rules engine fully supports are drawn (option to include partially supported ones).
    Collections are cumulative by default.
 2. **Deck building** in the Rogue Forge deck builder (piles, drag & drop, sideboard, stats, basic lands, Auto-build).
-3. **Best of three**, Limited rules (40+ cards, the rest of the collection is the sideboard), vs the AI (which builds
-   its own deck from its own sealed) or a friend over P2P with a room code. The result is read from the match; it can
-   also be entered by hand.
-4. **Rewards.** The loser opens 3 random cards that were on The List. The winner spins the Wheel of Fortune (one slice
-   per rarity in the pool opened this block) and picks 1 of 30 cards of that rarity from the block's years.
+3. **Best of 1, 3 or 5**, played one game at a time (40+ card decks; 2 players Limited, 3-4 Free-for-All, teams
+   Two-Headed Giant), vs the AIs (each builds its own deck from its own sealed; online they play on the host's
+   device) and friends over P2P. Friends enter each game one after the other so everyone keeps their seat. The
+   result is read from the game (the winner's seat); it can also be entered by hand.
+4. **Rewards.** Every loser opens 3 random cards that were on The List. The winner (teams: both winners) spins the
+   Wheel of Fortune (one slice per rarity in the pool opened this block) and picks 1 of 30 cards of that rarity from
+   the block's boosters.
 5. **Timeline** animation to the next block, until the end year. Records are kept by player name.
 
 Saving: the run is autosaved in the browser. **Save / Load** gives two separate exports:
@@ -48,10 +53,15 @@ from Scryfall's default-cards bulk file during the site build.
 
 ## Starter
 
-Both players pick a 60-card paper precon (`scripts/gen-starter-decks.mjs`, from MTGJSON AllDeckFiles, exact
-printings). Boosters of any set and product are at stake; single games; the loser gets a List card of a chosen colour,
-the winner a copy of a card of their deck (rarity wheel); then the winner and the loser each open a booster from the
-shared grid (live peer-to-peer sync vs a friend). The precon's basics live in the land tray with their own art.
+2 to 4 players (AIs and friends; at 4, free for all or teams 2 vs 2) each pick a 60-card paper precon or, with
+👑 Commander rules, an **official Commander precon** (`scripts/gen-starter-decks.mjs`, from MTGJSON AllDeckFiles,
+exact printings; Commander decks keep their commander apart, with its own art), or their own list. Boosters of any
+set and product are at stake (a multiple of the players); single games; every loser gets a List card of a chosen
+colour, the winner a copy of a card of their deck (rarity wheel); then the winner opens a booster from the shared
+grid first, then the others in seat order after the winner (live sync through the room; the AIs pick on the host's
+device). Who starts: game 1 at random; 2 players: the loser chooses; 3-4: the player after the winner. The precon's
+basics live in the land tray with their own art. Teams with commanders use the engine's Two-Headed Giant Commander
+rules, which check 100-card singleton lists and Commander's banned list (the official precons pass).
 
 ## Chess
 
@@ -141,6 +151,9 @@ Licence: phase.rs is MIT / Apache-2.0 — keep `LICENSE-*` and `NOTICE` in the r
 
 ## Rooms vs a friend (Chess, Starter, Progression)
 
+Starter, Progression and the Test match use the room for up to 4 players (`roomHub.tsx`: the host's device is the
+hub, friends' messages marked `fwd` are passed on to the others); Chess keeps the two-player room.
+
 Choosing "Vs a friend (online)" opens the mode room first (`client/src/progression/room.tsx`):
 the host presses **Create a room** and reads out the 5-character code, the friend types it
 and presses **Join**. Inside the room each player picks their own deck on their own device,
@@ -189,7 +202,8 @@ modes (room for online games, rules switch, the same list reading); its deep lin
 - **Tables**: 2, 3 or 4 players. Vs AI every other seat is an AI with its own deck and difficulty. Online the room
   (`client/src/progression/roomHub.tsx`) takes up to 3 friends: the host's device is the hub, the friends join with
   the code; each seat is a friend or an AI; the host presses Start and every friend joins the game by itself.
-- **Rules**: Normal (Freeform), Commander (Freeform Commander), Two-Headed Giant (seats 1+2 against 3+4),
+- **Rules**: Normal (Freeform; Free-for-All at 3-4), Commander (Freeform Commander), Teams 2 vs 2 / Two-Headed Giant
+  (seats 1+2 against 3+4, any deck size),
   Archenemy (seat 1 is the archenemy; the engine supplies the scheme deck), Planechase (online only, no AI; the
   engine supplies the planar deck). No card-pool legality; the three variants keep the engine's 60-card minimum.
   The Commander versions of the variants are not offered: the engine applies Commander's banned list to them.

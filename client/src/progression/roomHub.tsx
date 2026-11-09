@@ -5,6 +5,8 @@
 // whole states, so a reconnect or a reload simply sends them again.
 //   friend → host  {k:"me", id, name, deck, commander}
 //   host → all     {k:"lobby", players:[…]}  {k:"match", key, code}  (+ any other kind)
+//   friend → all   any message with fwd:true is passed on by the host to the
+//                  other friends (Starter: each player's booster picks)
 // The returned state has the same shape as useRoom's, so useAutoMatchRoom and
 // RoomPanel work with it unchanged.
 
@@ -15,7 +17,7 @@ import { createPeer } from "../network/transport";
 import { rememberLobbyOpponent } from "./cosmeticsLink";
 import type { SharedCosmetics } from "./cosmetics";
 import { sharedCosmetics } from "./cosmetics";
-import type { Room, RoomMe, RoomState } from "./room";
+import type { Room, RoomMe, RoomMode, RoomState } from "./room";
 import { loadRoom } from "./room";
 import type { LinkConn, LinkPeer, LinkStatus } from "./starterLink";
 
@@ -24,7 +26,7 @@ export interface HubPlayer extends RoomMe {
 }
 
 const FALLBACK_ICE: RTCConfiguration = { iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }, { urls: "stun:stun.l.google.com:19302" }] };
-const hostId = (code: string) => `pt1hub1-${code}-host`;
+const hostId = (mode: RoomMode, code: string) => (mode === "test" ? `pt1hub1-${code}-host` : `pt1hub1-${mode}-${code}-host`);
 
 function myHubId(): string {
   try {
@@ -42,10 +44,12 @@ function myHubId(): string {
 export interface HubState extends RoomState {
   /** Everyone in the room, the host first (as the host last told it). */
   players: HubPlayer[];
+  /** This device's id in the room ("host" for the host). */
+  myId: string;
 }
 
-export function useRoomHub(me: RoomMe | null): HubState {
-  const [room, setRoom] = useState<Room | null>(() => loadRoom("test"));
+export function useRoomHub(mode: RoomMode, me: RoomMe | null): HubState {
+  const [room, setRoom] = useState<Room | null>(() => loadRoom(mode));
   const [status, setStatus] = useState<LinkStatus | null>(null);
   const [latest, setLatest] = useState<Record<string, Record<string, unknown>>>({});
   const [guests, setGuests] = useState<HubPlayer[]>([]);
@@ -78,7 +82,7 @@ export function useRoomHub(me: RoomMe | null): HubState {
     if (room.role === "host") {
       const lobby = () => {
         const list = [{ ...(meMsg() as unknown as HubPlayer), id: "host" }, ...players.values()];
-        const msg = { k: "lobby", players: list.map(({ id: pid, name, deck, commander }) => ({ id: pid, name, deck, commander })) };
+        const msg = { k: "lobby", players: list.map(({ id: pid, name, deck, commander, custom }) => ({ id: pid, name, deck, commander, custom })) };
         sticky.set("lobby", msg);
         for (const c of conns.keys()) raw(c, msg);
         setGuests([...players.values()]);
@@ -99,11 +103,16 @@ export function useRoomHub(me: RoomMe | null): HubState {
             const m = JSON.parse(String(d)) as Record<string, unknown>;
             if (m.k === "me" && typeof m.id === "string") {
               conns.set(c, m.id);
-              players.set(m.id, { id: m.id, name: String(m.name ?? "Player"), deck: (m.deck as string | null) ?? null, commander: !!m.commander });
+              players.set(m.id, { id: m.id, name: String(m.name ?? "Player"), deck: (m.deck as string | null) ?? null, commander: !!m.commander, custom: m.custom });
               if (m.cos) rememberLobbyOpponent(m.cos as SharedCosmetics);
               lobby();
             }
             if (typeof m.k === "string") setLatest((prev) => ({ ...prev, [m.k as string]: m }));
+            // A friend's message for everyone: passed on (and kept for whoever connects later).
+            if (m.fwd === true && typeof m.k === "string") {
+              sticky.set(m.k, m);
+              for (const other of conns.keys()) if (other !== c) raw(other, m);
+            }
           } catch {
             // not ours
           }
@@ -122,7 +131,7 @@ export function useRoomHub(me: RoomMe | null): HubState {
       };
       const start = (config: RTCConfiguration, tries: number) => {
         if (closed) return;
-        const p = createPeer(hostId(room.code), { config }) as unknown as LinkPeer;
+        const p = createPeer(hostId(mode, room.code), { config }) as unknown as LinkPeer;
         peer = p;
         p.on("open", () => {
           setStatus(conns.size ? "connected" : "connecting");
@@ -159,7 +168,7 @@ export function useRoomHub(me: RoomMe | null): HubState {
         } catch {
           // ignore
         }
-        const c = peer.connect(hostId(room.code), { reliable: true });
+        const c = peer.connect(hostId(mode, room.code), { reliable: true });
         conn = c;
         c.on("open", () => {
           setStatus("connected");
@@ -216,7 +225,7 @@ export function useRoomHub(me: RoomMe | null): HubState {
       }
       sendRef.current = () => {};
     };
-  }, [room, id]);
+  }, [room, id, mode]);
 
   // My name / deck: sent again whenever it changes.
   useEffect(() => {
@@ -227,17 +236,17 @@ export function useRoomHub(me: RoomMe | null): HubState {
   const send = useCallback((m: Record<string, unknown>) => sendRef.current(m), []);
   const open = useCallback((r: Room | null) => {
     try {
-      if (r) localStorage.setItem("pt1-room-test", JSON.stringify(r));
-      else localStorage.removeItem("pt1-room-test");
+      if (r) localStorage.setItem(`pt1-room-${mode}`, JSON.stringify(r));
+      else localStorage.removeItem(`pt1-room-${mode}`);
     } catch {
       // ignore
     }
     setRoom(r);
-  }, []);
+  }, [mode]);
 
   const lobby = (latest.lobby as { players?: HubPlayer[] } | undefined)?.players;
   const players: HubPlayer[] =
     room?.role === "host" ? [{ id: "host", ...(me ?? { name: "Player" }) }, ...guests] : (lobby ?? []);
   const peer: RoomMe | null = room?.role === "host" ? (guests[0] ?? null) : (players.find((p) => p.id === "host") ?? null);
-  return { room, status, peer, latest, send, open, players };
+  return { room, status, peer, latest, send, open, players, myId: room?.role === "host" ? "host" : id };
 }

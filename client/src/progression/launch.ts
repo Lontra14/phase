@@ -1,8 +1,8 @@
-// Start a Progression Bo3: write the decks into the saved-deck library and open
-// the stock phase.rs match (vs AI) or the P2P room (vs a friend), exactly like
-// MatchLab does. The match is always Limited (40-card minimum, any number of
-// copies, unlimited sideboard) and best of three; the rest of the collection is
-// the sideboard.
+// Start a game of a mode (Progression, Starter, Chess, Test match): write the
+// decks into the saved-deck library and open the stock phase.rs match (vs AI)
+// or the P2P room (vs friends). Tables of 2 to 4: the AI seats keep their seat
+// number, friends take the other seats in the order they join. No card-pool
+// legality anywhere (see engineFormat).
 
 import type { FormatConfig, GameFormat } from "../adapter/types";
 import { ACTIVE_DECK_KEY, stampDeckMeta, writeSavedDeckData } from "../constants/storage";
@@ -70,11 +70,11 @@ function dashed(id: string): string {
 }
 
 /** The friend's collection as far as this device can rebuild it (for art only). */
-async function opponentStandIn(run: RunState, data: ProgData): Promise<PlayerState> {
-  const opp = run.players[(1 - run.me) as 0 | 1];
+async function opponentStandIn(run: RunState, data: ProgData, slot: number): Promise<PlayerState> {
+  const opp = run.players[slot];
   if (opp.pool?.length) return opp;
   try {
-    return { ...opp, pool: await opponentCollection(data, run), main: [] };
+    return { ...opp, pool: await opponentCollection(data, run, slot), main: [] };
   } catch (err) {
     console.warn("[progression] could not rebuild the opponent's printings", err);
     return { ...opp, pool: [], main: [] };
@@ -131,6 +131,8 @@ export function writeArtPins(players: PlayerState[], data: ProgData): void {
     }
     // Starter: the precon's own basic lands (they live in the tray, not in the pool).
     for (const [name, id] of Object.entries(p.landArt ?? {})) if (id) out.push([name, id]);
+    // A precon's commander: its own printing.
+    for (const [name, id] of Object.entries(p.cardArt ?? {})) if (id) out.push([name, id]);
   }
   try {
     localStorage.setItem(ART_PINS_KEY, JSON.stringify(out));
@@ -154,7 +156,7 @@ export interface MatchSpec {
   youDeck?: string;
   aiDeck?: string;
   /** Rules of the game: Limited (default; any cards, any copies), a commander format (command zone, commander rules) or a multiplayer variant. */
-  format?: "Limited" | "Commander" | "DuelCommander" | "Freeform" | "TwoHeadedGiant" | "Archenemy" | "Planechase";
+  format?: "Limited" | "Commander" | "DuelCommander" | "Freeform" | "TwoHeadedGiant" | "TwoHeadedGiantCommander" | "Archenemy" | "Planechase";
   /** Test match tables: seats in all (2 when absent). */
   players?: number;
   /** Test match tables: the AI players (vs AI: every opponent; online: the seats no friend takes). */
@@ -164,6 +166,8 @@ export interface MatchSpec {
 export interface TableSeat {
   player: PlayerState;
   difficulty: string;
+  /** Online: the engine seat of this AI (0 = host). Friends take the other seats in the order they join. */
+  seatIndex?: number;
 }
 
 /**
@@ -178,25 +182,36 @@ export interface TableSeat {
 function engineFormat(f: MatchSpec["format"]): GameFormat {
   if (f === "Commander" || f === "DuelCommander") return "FreeformCommander";
   // Multiplayer variants (no card-pool legality; the engine fixes their deck minimum).
-  if (f === "TwoHeadedGiant" || f === "Archenemy" || f === "Planechase") return f;
+  if (f === "TwoHeadedGiant" || f === "TwoHeadedGiantCommander" || f === "Archenemy" || f === "Planechase") return f;
   return f === "Limited" || f === "Freeform" ? "Freeform" : "Limited";
+}
+
+/**
+ * The format of this game: tables of 3-4 without commanders play Free-for-All
+ * (Freeform and Limited seat only two players), with its 40-card option.
+ */
+function tableFormat(spec: Pick<MatchSpec, "format" | "players">): GameFormat {
+  const fmt = engineFormat(spec.format);
+  return (spec.players ?? 2) > 2 && (fmt === "Freeform" || fmt === "Limited") ? "FreeForAll" : fmt;
 }
 
 /** The deck sent to the engine: Bo1 games in the free formats play without a sideboard. */
 function engineDeck(spec: MatchSpec, p: PlayerState, data: ProgData): ParsedDeck {
   const deck = deckOf(p, data);
-  if (engineFormat(spec.format) !== "Limited") deck.sideboard = [];
+  if (tableFormat(spec) !== "Limited") deck.sideboard = [];
   return deck;
 }
 
 function matchConfig(spec: Pick<MatchSpec, "format" | "startingLife" | "players">): FormatConfig {
-  const fmt = engineFormat(spec.format);
+  const fmt = tableFormat(spec);
   const base = FORMAT_DEFAULTS[fmt] ?? FORMAT_DEFAULTS.Limited;
   if (!base) throw new Error(`${fmt} format is not available in this build.`);
   const life = spec.startingLife ?? (spec.format === "DuelCommander" ? 20 : null);
   return {
     ...base,
     max_players: Math.max(base.min_players, spec.players ?? 2),
+    // Free-for-All: the 40-card option of its deck size (a table choice the engine allows).
+    ...(fmt === "FreeForAll" ? { deck_size: { type: "Minimum" as const, data: 40 } } : {}),
     ...(life ? { starting_life: life } : {}),
   };
 }
@@ -207,10 +222,12 @@ async function prepareArt(spec: MatchSpec, data: ProgData): Promise<void> {
   await pinPrintings(all, data);
 }
 
-/** The minimum deck size the engine requires in this game's format (multiplayer variants: 60). */
-export function engineDeckMinimum(format: MatchSpec["format"]): number {
-  const base = FORMAT_DEFAULTS[engineFormat(format)];
-  const rule = base?.deck_size;
+/** The minimum deck size the engine requires in this game's format (Archenemy / Planechase: 60). */
+export function engineDeckMinimum(format: MatchSpec["format"], players = 2): number {
+  const fmt = tableFormat({ format, players });
+  // Free-for-All and Two-Headed Giant: the engine checks no deck at all.
+  if (fmt === "FreeForAll" || fmt === "TwoHeadedGiant") return 0;
+  const rule = FORMAT_DEFAULTS[fmt]?.deck_size;
   return rule ? rule.data : 0;
 }
 
@@ -239,7 +256,7 @@ export async function launchAiMatchSpec(spec: MatchSpec, data: ProgData, gameId:
   useGameStore.setState({ gameId });
   const firstParam = spec.first ? `&first=${spec.first}` : "";
   navigate(
-    `/game/${gameId}?mode=ai&difficulty=${difficulty}&format=${engineFormat(spec.format)}&players=${ais.length + 1}&match=${spec.matchType.toLowerCase()}${firstParam}`,
+    `/game/${gameId}?mode=ai&difficulty=${difficulty}&format=${tableFormat({ ...spec, players: ais.length + 1 })}&players=${ais.length + 1}&match=${spec.matchType.toLowerCase()}${firstParam}`,
     { state: { formatConfig: config } },
   );
 }
@@ -263,7 +280,7 @@ export async function hostFriendMatchSpec(spec: MatchSpec, data: ProgData): Prom
     loopDetection: { type: "Interactive" },
     // Test match tables: the seats no friend takes are played by the AI, after the friends' seats.
     aiSeats: (spec.aiSeats ?? []).map((a, i) => ({
-      seatIndex: (spec.players ?? 2) - (spec.aiSeats?.length ?? 0) + i,
+      seatIndex: a.seatIndex ?? (spec.players ?? 2) - (spec.aiSeats?.length ?? 0) + i,
       difficulty: a.difficulty,
       deckName: null,
       deck: { type: "DeckList" as const, data: expandParsedDeck(engineDeck(spec, a.player, data)) },
@@ -288,12 +305,20 @@ export async function joinFriendMatchSpec(spec: MatchSpec, data: ProgData, code:
 // ── Progression (Bo3) ───────────────────────────────────────────────────────
 
 async function progressionSpec(run: RunState, data: ProgData): Promise<MatchSpec> {
+  // One game at a time: the page plays the block's best-of-1/3/5 series game by game.
+  const firstOpp = run.players.findIndex((_, i) => i !== run.me);
+  const ais = run.players.map((p, i) => ({ p, i })).filter((x) => x.i !== run.me && x.p.kind === "ai");
   return {
     me: run.players[run.me],
-    opp: await opponentStandIn(run, data),
+    opp: await opponentStandIn(run, data, firstOpp),
     difficulty: run.difficulty,
     startingLife: run.startingLife,
-    matchType: "Bo3",
+    matchType: "Bo1",
+    players: run.players.length,
+    // Teams of two (seats 1+2 against 3+4): Two-Headed Giant.
+    ...(run.teams && run.players.length === 4 ? { format: "TwoHeadedGiant" as const } : {}),
+    // The AI seats are played on the host's device (or in the game vs AI), each at its own seat.
+    aiSeats: run.mode === "ai" || run.me === 0 ? ais.map((x) => ({ player: x.p, difficulty: run.difficulty, seatIndex: x.i })) : [],
   };
 }
 

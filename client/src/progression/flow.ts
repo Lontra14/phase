@@ -3,12 +3,12 @@
 // autosaves whatever comes back.
 
 import { aiPick, autoBuild } from "./autobuild";
-import type { ProgData, ProgPrint, Rarity } from "./data";
-import { MAIN_RARITIES, RARITY_ORDER, isMainRarity, playableName, resolveSupport, wheelRarity } from "./data";
+import type { ProgData, ProgPrint, ProgSet, Rarity } from "./data";
+import { MAIN_RARITIES, RARITY_ORDER, isMainRarity, playableName, resolveSupport, setsInYears, wheelRarity } from "./data";
 import type { Pack } from "./packs";
 import { PackFactory } from "./packs";
 import type { HistoryEntry, Owned, PlayerState, Reward, RunState, Slot } from "./run";
-import { blockYears, blocksOf, emptyBasics, ownedOf, runRng } from "./run";
+import { blockSetCodes, blockYears, blocksOf, emptyBasics, ownedOf, runRng, sameSide, sideLead } from "./run";
 
 let factory: { key: string; f: PackFactory } | null = null;
 
@@ -18,10 +18,20 @@ export function factoryFor(data: ProgData, run: Pick<RunState, "allowPartial">):
   return factory.f;
 }
 
+/** The booster sets of the current block: its years, or the sets chosen for it. */
+export function blockSets(data: ProgData, run: RunState): ProgSet[] {
+  const codes = blockSetCodes(run);
+  if (codes) {
+    const want = new Set(codes.map((c) => c.toLowerCase()));
+    return data.sets.filter((s) => want.has(s.code.toLowerCase()) && (data.printsBySet.get(s.idx)?.length ?? 0) > 0);
+  }
+  const [from, to] = blockYears(run);
+  return setsInYears(data, from, to);
+}
+
 /** Ask the engine which cards of this block (and The List) it can play. */
 export async function prepareBlock(data: ProgData, run: RunState): Promise<void> {
-  const [from, to] = blockYears(run);
-  await resolveSupport([...PackFactory.namesForYears(data, from, to), ...data.list.map((p) => p.card.name)]);
+  await resolveSupport([...PackFactory.namesForSets(data, blockSets(data, run)), ...data.list.map((p) => p.card.name)]);
 }
 
 export function engineName(print: ProgPrint, run: Pick<RunState, "allowPartial">): string {
@@ -32,8 +42,7 @@ const clone = (run: RunState): RunState => JSON.parse(JSON.stringify(run)) as Ru
 
 /** The sealed packs a slot opens this block (deterministic for the run seed). */
 export function sealedFor(data: ProgData, run: RunState, slot: Slot): Pack[] {
-  const [from, to] = blockYears(run);
-  return factoryFor(data, run).openSealed(from, to, run.packs, runRng(run, slot, "sealed"));
+  return factoryFor(data, run).openSealedFrom(blockSets(data, run), run.packs, runRng(run, slot, "sealed"));
 }
 
 function addOpened(p: PlayerState, cards: Owned[], cumulative: boolean): void {
@@ -54,15 +63,15 @@ export function applySealed(data: ProgData, run: RunState, myPacks: Pack[]): Run
   const next = clone(run);
   const toOwned = (packs: Pack[]) => packs.flatMap((pk) => pk.cards.map((c) => ownedOf(c, engineName(c, run))));
   addOpened(next.players[next.me], toOwned(myPacks), run.cumulative);
-  const other = (1 - next.me) as Slot;
-  const opp = next.players[other];
-  if (opp.kind === "ai") {
+  // Every AI seat opens its sealed (seeded: the same on every device) and builds.
+  next.players.forEach((opp, other) => {
+    if (other === next.me || opp.kind !== "ai") return;
     addOpened(opp, toOwned(sealedFor(data, run, other)), run.cumulative);
     const built = autoBuild(opp.pool ?? [], data);
     opp.main = built.main;
     opp.basics = built.basics;
     opp.ready = true;
-  }
+  });
   next.phase = "pool";
   return next;
 }
@@ -91,14 +100,14 @@ function buildReward(data: ProgData, run: RunState, slot: Slot, won: boolean): R
   // Slices: common / uncommon / rare / mythic present in the opened pool (List and
   // special-sheet cards count as their real rarity), and only rarities the block's
   // years can actually offer.
-  const [from, to] = blockYears(run);
+  const sets = blockSets(data, run);
   const present = rarityOrder(p.opened.map((o) => wheelRarity(data, data.byKey.get(o.k))));
-  let wheel = present.filter((r) => f.universe(from, to, r).length > 0);
-  if (!wheel.length) wheel = MAIN_RARITIES.filter((r) => f.universe(from, to, r).length > 0).slice(0, 3);
+  let wheel = present.filter((r) => f.universeOf(sets, r).length > 0);
+  if (!wheel.length) wheel = MAIN_RARITIES.filter((r) => f.universeOf(sets, r).length > 0).slice(0, 3);
   if (!wheel.length) wheel = ["c"];
   const rng = runRng(run, slot, "wheel");
   const rarity = wheel[rng.int(wheel.length)];
-  const choices = rng.shuffle(f.universe(from, to, rarity)).slice(0, 30).map((c) => c.key);
+  const choices = rng.shuffle(f.universeOf(sets, rarity)).slice(0, 30).map((c) => c.key);
   return { kind: "wheel", wheel, rarity, choices, spun: false, done: false };
 }
 
@@ -115,30 +124,52 @@ export function repairReward(data: ProgData, run: RunState): RunState {
   return next;
 }
 
-/** Record a finished Bo3 and set up both players' rewards (the AI resolves its own at once). */
-export function applyResult(data: ProgData, run: RunState, myWins: number, oppWins: number): RunState {
+/** Games a player must win to take the block: best of 1 → 1, of 3 → 2, of 5 → 3. */
+export function seriesTarget(run: Pick<RunState, "bestOf">): number {
+  return Math.ceil((run.bestOf ?? 3) / 2);
+}
+
+/**
+ * A game of the block's series ended (`winner` = seat). Until someone reaches
+ * the target the block goes on with another game; then the block is recorded
+ * and every player's reward is set up (the AIs resolve theirs at once). Results
+ * of an older two-player Bo3 played inside one match pass `wholeSeries`.
+ */
+export function applyResult(data: ProgData, run: RunState, winner: Slot | null, wholeSeries?: { score: string }): RunState {
   const next = clone(run);
   const me = next.me;
-  const opp = (1 - me) as Slot;
-  const iWon = myWins > oppWins;
-  const winner: Slot | null = myWins === oppWins ? null : iWon ? me : opp;
+  const series = next.players.map((_, i) => next.series?.[i] ?? 0);
+  // Team tables: a game won by either player counts for the team (on its first seat).
+  if (winner !== null && !wholeSeries) series[sideLead(next, winner)] += 1;
+  next.pendingGameId = null;
+  next.pendingResult = null;
+  const best = Math.max(...series);
+  if (!wholeSeries && best < seriesTarget(next)) {
+    // Not decided yet: next game of the series.
+    next.series = series;
+    next.phase = "match";
+    return next;
+  }
+  const blockWinner: Slot | null = wholeSeries ? winner : series.indexOf(best);
   const entry: HistoryEntry = {
     block: next.block,
     years: blockYears(next),
-    winner,
-    score: `${myWins}-${oppWins}`,
+    winner: blockWinner,
+    // One number per side (team tables: per team).
+    score: wholeSeries ? wholeSeries.score : [...new Set(next.players.map((_, i) => sideLead(next, i)))].map((lead) => series[lead]).join("-"),
   };
   next.history = next.history.filter((h) => h.block !== next.block).concat(entry);
-  if (winner !== null) {
-    next.players[winner].wins += 1;
-    next.players[(1 - winner) as Slot].losses += 1;
-  }
-  next.pendingGameId = null;
-  next.pendingResult = null;
-  next.players[me].reward = buildReward(data, next, me, winner === me);
-  const o = next.players[opp];
-  if (o.kind === "ai" && o.pool) {
-    const r = buildReward(data, next, opp, winner === opp);
+  const won = (slot: Slot) => blockWinner !== null && sameSide(next, slot, blockWinner);
+  next.players.forEach((p, i) => {
+    if (blockWinner === null) return;
+    if (won(i)) p.wins += 1;
+    else p.losses += 1;
+  });
+  next.series = next.players.map(() => 0);
+  next.players[me].reward = buildReward(data, next, me, won(me));
+  next.players.forEach((o, slot) => {
+    if (slot === me || o.kind !== "ai" || !o.pool) return;
+    const r = buildReward(data, next, slot, won(slot));
     if (r.kind === "list") o.pool.push(...(r.list ?? []));
     else if (r.choices?.length) {
       const built = autoBuild(o.pool, data);
@@ -150,9 +181,18 @@ export function applyResult(data: ProgData, run: RunState, myWins: number, oppWi
       }
     }
     o.reward = { ...r, done: true };
-  }
+  });
   next.phase = "reward";
   return next;
+}
+
+/** The seat that won the result the watcher stored (older results: from my wins / their wins). */
+export function resultWinner(run: RunState): Slot | null {
+  const r = run.pendingResult;
+  if (!r) return null;
+  if (typeof r.winner === "number" && r.winner >= 0 && r.winner < run.players.length) return r.winner;
+  if (r.myWins === r.oppWins) return null;
+  return r.myWins > r.oppWins ? run.me : run.players.findIndex((_, i) => i !== run.me);
 }
 
 /** Finish my reward: wheel pick goes into the collection and the main deck; List cards go to the collection. */
@@ -181,15 +221,14 @@ export function claimReward(data: ProgData, run: RunState, pickedKey?: string): 
  * regenerated. Wheel picks are choices and cannot be — those cards keep the
  * default art. Used only to show the right printings during the match.
  */
-export async function opponentCollection(data: ProgData, run: RunState): Promise<Owned[]> {
-  const opp = (1 - run.me) as Slot;
+export async function opponentCollection(data: ProgData, run: RunState, opp: Slot = run.players.findIndex((_, i) => i !== run.me)): Promise<Owned[]> {
   const out: Owned[] = [];
   for (let b = run.cumulative ? 0 : run.block; b <= run.block; b++) {
     const at: RunState = { ...run, block: b };
     await prepareBlock(data, at);
     for (const pack of sealedFor(data, at, opp)) for (const c of pack.cards) out.push(ownedOf(c, engineName(c, at)));
     const h = run.history.find((x) => x.block === b);
-    if (h && h.winner === run.me) out.push(...(buildReward(data, at, opp, false).list ?? []));
+    if (h && (h.winner === null || !sameSide(run, h.winner, opp))) out.push(...(buildReward(data, at, opp, false).list ?? []));
   }
   return out;
 }

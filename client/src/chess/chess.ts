@@ -10,7 +10,10 @@ import type { ProgData, ProgSet } from "../progression/data";
 import { findPrintByName } from "../progression/data";
 import { engineName } from "../progression/flow";
 import { makeRng, randomSeed } from "../progression/rng";
-import type { Owned, PlayerState, Slot } from "../progression/run";
+import type { Owned, PlayerState } from "../progression/run";
+
+/** Chess is played by two: seat 0 (host) or 1. */
+export type Slot = 0 | 1;
 import { CHESS_RUN_KEY, decodeCode, emptyBasics, encodeCode, ownedOf } from "../progression/run";
 import { foldBasics } from "../progression/starter";
 import type { StarterDeck } from "../progression/starterData";

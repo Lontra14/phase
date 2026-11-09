@@ -9,7 +9,7 @@
 
 export interface LinkPick {
   i: number;
-  slot: 0 | 1;
+  slot: number;
   round: number | null;
 }
 

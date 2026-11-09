@@ -7,11 +7,13 @@ import { yearsLabel } from "./run";
 
 interface Props {
   blocks: [number, number][];
+  /** Labels under the ticks (default: the years). */
+  labels?: string[];
   from: number;
   to: number;
 }
 
-export function Timeline({ blocks, from, to }: Props) {
+export function Timeline({ blocks, labels, from, to }: Props) {
   const [pos, setPos] = useState(from);
   const startYear = blocks[Math.min(from, blocks.length - 1)][0];
   const endYear = blocks[Math.min(to, blocks.length - 1)][0];
@@ -49,7 +51,7 @@ export function Timeline({ blocks, from, to }: Props) {
             <div className={`pf-tl-tick${i <= pos ? " past" : ""}`} style={{ left: `${pct(i)}%` }} />
             {(i % labelEvery === 0 || i === n - 1 || i === to) && (
               <div className="pf-tl-label" style={{ left: `${pct(i)}%`, color: i === to ? "var(--gold-bright)" : undefined }}>
-                {yearsLabel(b)}
+                {labels?.[i] ?? yearsLabel(b)}
               </div>
             )}
           </div>
