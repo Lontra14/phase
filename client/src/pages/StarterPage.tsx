@@ -724,7 +724,7 @@ function StarterSetup({
               <b>{packsRounded}</b> boosters{packsRounded !== s.packs ? ` (a multiple of ${n} players)` : ""} → <b>{packsRounded / n + 1}</b> games: one before each round of boosters, then a last one.
               {n === 2 ? " Game 1 starts at random, later games the loser chooses." : " Game 1 starts at random, later games the player after the winner starts."}
               {teams && " Teams: seats 1+2 against 3+4 (Two-Headed Giant rules, shared life)."}
-              {teams && commanderRules && " With commanders the engine uses its Two-Headed Giant Commander rules, which check 100-card singleton lists."}
+              {teams && commanderRules && " With commanders: Two-Headed Giant Commander (command zone, any list)."}
               {s.mode === "friend" && !inRoom && <> Open a room above, or start now and send your friend the save code.</>}
             </div>
           </div>

@@ -60,8 +60,8 @@ set and product are at stake (a multiple of the players); single games; every lo
 colour, the winner a copy of a card of their deck (rarity wheel); then the winner opens a booster from the shared
 grid first, then the others in seat order after the winner (live sync through the room; the AIs pick on the host's
 device). Who starts: game 1 at random; 2 players: the loser chooses; 3-4: the player after the winner. The precon's
-basics live in the land tray with their own art. Teams with commanders use the engine's Two-Headed Giant Commander
-rules, which check 100-card singleton lists and Commander's banned list (the official precons pass).
+basics live in the land tray with their own art. Teams with commanders play Two-Headed Giant Commander; the engine is patched
+(`crates/engine/src/game/deck_validation.rs`) so that format checks no deck at all, like Two-Headed Giant.
 
 ## Chess
 
@@ -206,4 +206,5 @@ modes (room for online games, rules switch, the same list reading); its deep lin
   (seats 1+2 against 3+4, any deck size),
   Archenemy (seat 1 is the archenemy; the engine supplies the scheme deck), Planechase (online only, no AI; the
   engine supplies the planar deck). No card-pool legality; the three variants keep the engine's 60-card minimum.
-  The Commander versions of the variants are not offered: the engine applies Commander's banned list to them.
+  👑 Teams 2 vs 2 Commander (Two-Headed Giant Commander, no deck check: engine patch). The Commander versions of
+  Archenemy and Planechase are not offered: the engine applies Commander's banned list to them.

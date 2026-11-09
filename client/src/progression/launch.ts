@@ -225,8 +225,8 @@ async function prepareArt(spec: MatchSpec, data: ProgData): Promise<void> {
 /** The minimum deck size the engine requires in this game's format (Archenemy / Planechase: 60). */
 export function engineDeckMinimum(format: MatchSpec["format"], players = 2): number {
   const fmt = tableFormat({ format, players });
-  // Free-for-All and Two-Headed Giant: the engine checks no deck at all.
-  if (fmt === "FreeForAll" || fmt === "TwoHeadedGiant") return 0;
+  // Free-for-All and Two-Headed Giant (also its Commander version, patched in the engine): no deck check at all.
+  if (fmt === "FreeForAll" || fmt === "TwoHeadedGiant" || fmt === "TwoHeadedGiantCommander") return 0;
   const rule = FORMAT_DEFAULTS[fmt]?.deck_size;
   return rule ? rule.data : 0;
 }

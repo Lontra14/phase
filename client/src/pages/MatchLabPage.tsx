@@ -43,11 +43,14 @@ const SETTINGS_KEY = "phase-matchlab-draft";
 const CUSTOM = "__custom__";
 
 type First = "random" | "play" | "draw";
-type LabFormat = "normal" | "commander" | "2hg" | "archenemy" | "planechase";
+type LabFormat = "normal" | "commander" | "2hg" | "2hgc" | "archenemy" | "planechase";
+/** Team formats: always 4 players, seats 1+2 against 3+4. */
+const TEAMS = (f: LabFormat | undefined) => f === "2hg" || f === "2hgc";
 const FORMATS: { id: LabFormat; label: string; spec: NonNullable<MatchSpec["format"]>; note: string }[] = [
   { id: "normal", label: "Normal (free for all)", spec: "Freeform", note: "Any cards, any number of copies. At 3-4 players everyone plays for themselves." },
   { id: "commander", label: "👑 Commander", spec: "Commander", note: "Each deck has a commander in the command zone (commander damage, 40 life unless you set another). Any cards, any number of copies." },
   { id: "2hg", label: "Teams 2 vs 2 (Two-Headed Giant)", spec: "TwoHeadedGiant", note: "4 players in two teams of two (seats 1+2 against 3+4), 30 life per team, shared turns. Any cards, any deck size." },
+  { id: "2hgc", label: "👑 Teams 2 vs 2 Commander", spec: "TwoHeadedGiantCommander", note: "Two-Headed Giant with commanders: 4 players in two teams (seats 1+2 against 3+4), command zone, 60 life per team. Any cards, any number of copies, any deck size." },
   { id: "archenemy", label: "Archenemy", spec: "Archenemy", note: "Seat 1 (the host / you) is the archenemy with a scheme deck; everyone else plays together against them. Decks of at least 60 cards." },
   { id: "planechase", label: "Planechase", spec: "Planechase", note: "A shared planar deck, roll the planar die. Online only (no AI in Planechase). Decks of at least 60 cards." },
 ];
@@ -189,7 +192,7 @@ export function MatchLabPage() {
   const [guestRules, setGuestRules] = useState<{ format?: LabFormat; players?: number } | null>(null);
   const format: LabFormat = (s.mode === "friend" && guestRules?.format) || s.format;
   const fmt = FORMATS.find((f) => f.id === format) ?? FORMATS[0];
-  const commander = format === "commander";
+  const commander = format === "commander" || format === "2hgc";
   const noAi = format === "planechase";
   const minDeck = engineDeckMinimum(fmt.spec, Math.max(2, guestRules?.players ?? s.players));
   const deckOk = (d: ImportedDeck | null) => importReady(d, commander) && (d?.size ?? 0) + (d?.commanders.length ?? 0) >= minDeck;
@@ -202,7 +205,7 @@ export function MatchLabPage() {
   useEffect(() => {
     setGuestRules(!host && inRoom && hostSettings ? hostSettings : null);
   }, [host, inRoom, hostSettings]);
-  const players = format === "2hg" ? 4 : guestRules?.players ?? s.players;
+  const players = TEAMS(format) ? 4 : guestRules?.players ?? s.players;
 
   // The table: seats 2..players. Vs AI they are all AIs; online each is a friend or an AI.
   const seats = s.seats.slice(0, players - 1).map((x) => ({ ...x, kind: s.mode === "ai" ? ("ai" as const) : noAi ? ("friend" as const) : x.kind }));
@@ -216,7 +219,7 @@ export function MatchLabPage() {
   const hubSend = hub.send;
   useEffect(() => {
     if (!inRoom || !host) return;
-    hubSend({ k: "settings", format: s.format, players: s.format === "2hg" ? 4 : s.players });
+    hubSend({ k: "settings", format: s.format, players: TEAMS(s.format) ? 4 : s.players });
   }, [inRoom, host, s.format, s.players, hubSend, hub.status]);
 
   const spec = (): MatchSpec => {
@@ -335,7 +338,7 @@ export function MatchLabPage() {
           <div className="pf-fields">
             <label className="pf-field">
               <span>Rules</span>
-              <select value={format} disabled={!!guestRules} onChange={(e) => set({ format: e.target.value as LabFormat, ...(e.target.value === "2hg" ? { players: 4 } : {}) })}>
+              <select value={format} disabled={!!guestRules} onChange={(e) => set({ format: e.target.value as LabFormat, ...(TEAMS(e.target.value as LabFormat) ? { players: 4 } : {}) })}>
                 {FORMATS.filter((f) => s.mode === "friend" || f.id !== "planechase").map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.label}
@@ -345,7 +348,7 @@ export function MatchLabPage() {
             </label>
             <label className="pf-field">
               <span>Players</span>
-              <select value={players} disabled={format === "2hg" || !!guestRules} onChange={(e) => set({ players: Number(e.target.value) })}>
+              <select value={players} disabled={TEAMS(format) || !!guestRules} onChange={(e) => set({ players: Number(e.target.value) })}>
                 {[2, 3, 4].map((n) => (
                   <option key={n} value={n}>
                     {n}
@@ -397,7 +400,7 @@ export function MatchLabPage() {
                   <div key={i} className="pf-seat">
                     <div className="pf-seat-head">
                       <b>Seat {i + 2}</b>
-                      {format === "2hg" && <span className="pf-hint">{i === 0 ? "your teammate" : "opponent team"}</span>}
+                      {TEAMS(format) && <span className="pf-hint">{i === 0 ? "your teammate" : "opponent team"}</span>}
                       {s.mode === "friend" && !noAi && (
                         <div className="pf-seg">
                           <button type="button" className={seat.kind === "friend" ? "sel" : ""} onClick={() => setSeat(i, { kind: "friend" })}>

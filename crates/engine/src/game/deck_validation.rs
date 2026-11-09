@@ -1402,6 +1402,8 @@ impl CommanderVariantRules {
 
     /// 2HG Commander decks are Commander decks (CR 903.3 / CR 903.5): same
     /// eligibility predicate and Commander legality table, own error label.
+    /// (Unused in Pay the 1 pt1, which checks no 2HG Commander deck.)
+    #[allow(dead_code)]
     fn two_headed_giant_commander() -> Self {
         Self {
             eligible: is_commander_eligible,
@@ -2914,15 +2916,10 @@ fn evaluate_selected_format_summary(
             CommanderVariantRules::commander(),
             &format_rules,
         ),
-        // CR 903.5 with CR 810 seating: routes through the shared commander
-        // validator — deck shape, legality table, and pairing all read from
-        // `format_rules`, so only the variant rules (error label) differ.
-        GameFormat::TwoHeadedGiantCommander => quick_commander_check(
-            db,
-            request,
-            CommanderVariantRules::two_headed_giant_commander(),
-            &format_rules,
-        ),
+        // Pay the 1 pt1: friendly team games with any commander list — no deck
+        // check at all, exactly like Two-Headed Giant (no singleton, no deck
+        // size, no banned list).
+        GameFormat::TwoHeadedGiantCommander => QuickCheckResult::compatible(),
         GameFormat::FreeformCommander => quick_commander_check(
             db,
             request,
@@ -3441,19 +3438,8 @@ fn evaluate_selected_format(
         }
         // CR 903.5 with CR 810 seating — see the matching arm in the
         // quick-check dispatch.
-        GameFormat::TwoHeadedGiantCommander => {
-            let check = evaluate_commander_with_format(
-                db,
-                request,
-                unknown_cards,
-                CommanderVariantRules::two_headed_giant_commander(),
-                &format_rules,
-            );
-            if !check.compatible {
-                reasons.extend(check.reasons);
-            }
-            check.compatible
-        }
+        // Pay the 1 pt1: no deck check for team Commander games (see the quick check).
+        GameFormat::TwoHeadedGiantCommander => true,
         GameFormat::Pioneer
         | GameFormat::Modern
         | GameFormat::Premodern
