@@ -489,12 +489,13 @@ function StarterSetup({
   const hostName = room.players.find((p) => p.id === "host")?.name?.trim() || "Host";
   const linked = room.status === "connected";
   const players = guestWaiting ? 1 : s.players;
-  const teams = s.players === 4 && s.teams;
+  // Teams need four people: phase.rs's AI cannot play as part of a team.
+  const teams = s.players === 4 && s.teams && s.mode === "friend";
   // Seat kinds: 0 = me; then AI, a friend in the room, or (no room) a friend whose deck I pick.
   const kindAt = (i: number): "me" | "ai" | "friend" | "local" => {
     if (i === 0) return "me";
     if (s.mode === "ai") return "ai";
-    const k = s.seatKinds[i - 1] ?? "friend";
+    const k = teams ? "friend" : s.seatKinds[i - 1] ?? "friend";
     return k === "ai" ? "ai" : inRoom ? "friend" : "local";
   };
   const friendAt = (i: number) => friendsIn[Array.from({ length: i }, (_, j) => kindAt(j)).filter((k) => k === "friend").length];
@@ -673,13 +674,14 @@ function StarterSetup({
               <div className="pf-field" style={{ marginTop: "0.9rem" }}>
                 <span>Table of 4</span>
                 <div className="pf-seg">
-                  <button type="button" className={!s.teams ? "sel" : ""} onClick={() => set({ teams: false })}>
+                  <button type="button" className={!teams ? "sel" : ""} onClick={() => set({ teams: false })}>
                     Free for all
                   </button>
-                  <button type="button" className={s.teams ? "sel" : ""} onClick={() => set({ teams: true })}>
+                  <button type="button" className={teams ? "sel" : ""} disabled={s.mode === "ai"} onClick={() => set({ teams: true })}>
                     Teams 2 vs 2
                   </button>
                 </div>
+                <small className="pf-hint">{s.mode === "ai" ? "Teams need four players online: the AI can't play in a team." : teams ? "Teams: four friends (the AI can't play in a team)." : ""}</small>
               </div>
             )}
             {s.mode === "friend" && (
@@ -689,14 +691,14 @@ function StarterSetup({
                     <div className="pf-seat-head">
                       <b>Seat {i + 1}</b>
                       {teams && <span className="pf-hint">{i === 1 ? "your teammate" : "opponent team"}</span>}
-                      <div className="pf-seg">
+                      {!teams && <div className="pf-seg">
                         <button type="button" className={s.seatKinds[i - 1] !== "ai" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i - 1 ? "friend" : x)) })}>
                           Friend
                         </button>
                         <button type="button" className={s.seatKinds[i - 1] === "ai" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i - 1 ? "ai" : x)) })}>
                           AI
                         </button>
-                      </div>
+                      </div>}
                     </div>
                   </div>
                 ))}
@@ -982,6 +984,7 @@ function StarterMatch({
       youDeck: YOU_DECK,
       aiDeck: AI_DECK,
       players: run.players.length,
+      tableNames: run.players.map((p) => p.name),
       aiSeats: ownsTable
         ? others.filter((x) => x.p.kind === "ai").map((x) => ({ player: forMatch(x.p, deckRules), difficulty: run.difficulty, seatIndex: x.i }))
         : [],

@@ -77,7 +77,9 @@ mkdir -p "$(dirname "$OUTPUT")"
 # name collisions (e.g., a card named "Saproling" vs a Saproling token).
 # The frontend resolves token images via this prefix key, avoiding live
 # Scryfall API calls at runtime.
-NON_PLAYABLE='["token","double_faced_token","emblem","art_series","vanguard","scheme","planar","augment","host"]'
+# Pay the 1 pt1: schemes (Archenemy) and planes / phenomena (Planechase) keep
+# their images — the game shows them, and their names collide with no card.
+NON_PLAYABLE='["token","double_faced_token","emblem","art_series","vanguard","augment","host"]'
 
 jq -c --argjson exclude "$NON_PLAYABLE" "$SCRYFALL_JQ_PRELUDE"'
   # Printed orientation of one face (a card_faces element, or the card itself

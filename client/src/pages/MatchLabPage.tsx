@@ -43,16 +43,19 @@ const SETTINGS_KEY = "phase-matchlab-draft";
 const CUSTOM = "__custom__";
 
 type First = "random" | "play" | "draw";
-type LabFormat = "normal" | "commander" | "2hg" | "2hgc" | "archenemy" | "planechase";
+type LabFormat = "normal" | "commander" | "2hg" | "2hgc" | "archenemy" | "planechase" | "planechasec";
+/** Formats phase.rs's AI cannot play (team turns, the planar die): friends online only. */
+const NO_AI = (f: LabFormat | undefined) => f === "2hg" || f === "2hgc" || f === "planechase" || f === "planechasec";
 /** Team formats: always 4 players, seats 1+2 against 3+4. */
 const TEAMS = (f: LabFormat | undefined) => f === "2hg" || f === "2hgc";
 const FORMATS: { id: LabFormat; label: string; spec: NonNullable<MatchSpec["format"]>; note: string }[] = [
   { id: "normal", label: "Normal (free for all)", spec: "Freeform", note: "Any cards, any number of copies. At 3-4 players everyone plays for themselves." },
   { id: "commander", label: "👑 Commander", spec: "Commander", note: "Each deck has a commander in the command zone (commander damage, 40 life unless you set another). Any cards, any number of copies." },
-  { id: "2hg", label: "Teams 2 vs 2 (Two-Headed Giant)", spec: "TwoHeadedGiant", note: "4 players in two teams of two (seats 1+2 against 3+4), 30 life per team, shared turns. Any cards, any deck size." },
-  { id: "2hgc", label: "👑 Teams 2 vs 2 Commander", spec: "TwoHeadedGiantCommander", note: "Two-Headed Giant with commanders: 4 players in two teams (seats 1+2 against 3+4), command zone, 60 life per team. Any cards, any number of copies, any deck size." },
+  { id: "2hg", label: "Teams 2 vs 2 (Two-Headed Giant)", spec: "TwoHeadedGiant", note: "4 players in two teams of two (seats 1+2 against 3+4), 30 life per team, shared turns. Friends online only (the AI can't play in a team). Any cards, any deck size." },
+  { id: "2hgc", label: "👑 Teams 2 vs 2 Commander", spec: "TwoHeadedGiantCommander", note: "Two-Headed Giant with commanders: 4 players in two teams (seats 1+2 against 3+4), command zone, 60 life per team. Friends online only. Any cards, any number of copies, any deck size." },
   { id: "archenemy", label: "Archenemy", spec: "Archenemy", note: "Seat 1 (the host / you) is the archenemy with a scheme deck; everyone else plays together against them. Decks of at least 60 cards." },
-  { id: "planechase", label: "Planechase", spec: "Planechase", note: "A shared planar deck, roll the planar die. Online only (no AI in Planechase). Decks of at least 60 cards." },
+  { id: "planechase", label: "Planechase", spec: "Planechase", note: "2 to 4 players, a shared planar deck (supplied by the engine), roll the planar die. Friends online only: the AI cannot play Planechase. Any cards, any deck size." },
+  { id: "planechasec", label: "👑 Planechase Commander", spec: "PlanechaseCommander", note: "Planechase with commanders: 2 to 4 players, command zone, shared planar deck. Friends online only. Any cards, any number of copies, any deck size." },
 ];
 
 interface SeatCfg {
@@ -192,8 +195,8 @@ export function MatchLabPage() {
   const [guestRules, setGuestRules] = useState<{ format?: LabFormat; players?: number } | null>(null);
   const format: LabFormat = (s.mode === "friend" && guestRules?.format) || s.format;
   const fmt = FORMATS.find((f) => f.id === format) ?? FORMATS[0];
-  const commander = format === "commander" || format === "2hgc";
-  const noAi = format === "planechase";
+  const commander = format === "commander" || format === "2hgc" || format === "planechasec";
+  const noAi = NO_AI(format);
   const minDeck = engineDeckMinimum(fmt.spec, Math.max(2, guestRules?.players ?? s.players));
   const deckOk = (d: ImportedDeck | null) => importReady(d, commander) && (d?.size ?? 0) + (d?.commanders.length ?? 0) >= minDeck;
   const youReady = deckOk(you);
@@ -264,7 +267,7 @@ export function MatchLabPage() {
     if (busy || !data) return;
     setError(null);
     if (noAi) {
-      setError("Planechase has no AI: play it online with friends.");
+      setError(`${fmt.label}: the AI can't play it — play it online with friends.`);
       return;
     }
     if (!youReady || !aisReady) {
@@ -313,7 +316,7 @@ export function MatchLabPage() {
         <p className="pf-sub">Any decks, one game: 2 to 4 players, against the AI or friends online.</p>
 
         <div className="pf-room-row" style={{ justifyContent: "center", marginBottom: "0.8rem" }}>
-          <button type="button" className={`pf-vchip${s.mode === "ai" ? " sel" : ""}`} onClick={() => set({ mode: "ai", format: s.format === "planechase" ? "normal" : s.format })}>
+          <button type="button" className={`pf-vchip${s.mode === "ai" ? " sel" : ""}`} onClick={() => set({ mode: "ai", format: NO_AI(s.format) ? (s.format === "2hgc" || s.format === "planechasec" ? "commander" : "normal") : s.format })}>
             Vs AI
           </button>
           <button type="button" className={`pf-vchip${s.mode === "friend" ? " sel" : ""}`} onClick={() => set({ mode: "friend" })}>
@@ -339,7 +342,7 @@ export function MatchLabPage() {
             <label className="pf-field">
               <span>Rules</span>
               <select value={format} disabled={!!guestRules} onChange={(e) => set({ format: e.target.value as LabFormat, ...(TEAMS(e.target.value as LabFormat) ? { players: 4 } : {}) })}>
-                {FORMATS.filter((f) => s.mode === "friend" || f.id !== "planechase").map((f) => (
+                {FORMATS.filter((f) => s.mode === "friend" || !NO_AI(f.id)).map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.label}
                   </option>

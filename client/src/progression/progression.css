@@ -451,3 +451,8 @@
 .pf-setpick-list b { font-weight: 600; font-size: 0.86rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-setpick-list small { color: var(--muted); font-size: 0.72rem; }
 .pf-versus .side > div { margin: 0.1rem 0; }
+.pf-blocktabs { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+.pf-blocktabs .pf-vchip { display: inline-flex; flex-direction: column; align-items: flex-start; line-height: 1.15; }
+.pf-blocktabs .pf-vchip small { font-size: 0.66rem; color: var(--muted); max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-blocktabs .pf-vchip.empty small { color: #f2b49f; }
+.pf-setpick-list button.sel { background: rgba(201, 162, 75, 0.18); border-color: rgba(201, 162, 75, 0.55); }

@@ -87,8 +87,8 @@ export interface RunSettings {
   bestOf?: number;
   /** Tables of 4: two teams (seats 1+2 against 3+4, Two-Headed Giant) instead of everyone for themselves. */
   teams?: boolean;
-  /** Boosters chosen by set instead of by year: the sets in play order, `blockSize` of them per block. */
-  packSets?: PackSetRef[];
+  /** Boosters chosen by set instead of by year: the sets of each block (one series per block). */
+  packBlocks?: PackSetRef[][];
 }
 
 /** A booster set picked for a run (code as in the card index). */
@@ -118,21 +118,20 @@ export interface RunState extends RunSettings {
   pendingResult: { myWins: number; oppWins: number; winner?: number } | null;
 }
 
-type BlockSettings = Pick<RunSettings, "startYear" | "endYear" | "blockSize" | "packSets">;
+type BlockSettings = Pick<RunSettings, "startYear" | "endYear" | "blockSize" | "packBlocks">;
+
+/** Whether the run's boosters are chosen by set. */
+export const bySets = (s: Pick<RunSettings, "packBlocks">): boolean => !!s.packBlocks?.length;
 
 /** The chosen sets of each block (runs by set). */
 export function setChunks(s: BlockSettings): PackSetRef[][] {
-  const size = Math.max(1, Math.min(5, Math.round(s.blockSize)));
-  const out: PackSetRef[][] = [];
-  const sets = s.packSets ?? [];
-  for (let i = 0; i < sets.length; i += size) out.push(sets.slice(i, i + size));
-  return out;
+  return s.packBlocks ?? [];
 }
 
 /** The years of every block (runs by set: the release years of each block's sets). */
 export function blocksOf(s: BlockSettings): [number, number][] {
-  if (s.packSets?.length) {
-    return setChunks(s).map((c) => [Math.min(...c.map((x) => x.year)), Math.max(...c.map((x) => x.year))] as [number, number]);
+  if (bySets(s)) {
+    return setChunks(s).map((c) => (c.length ? ([Math.min(...c.map((x) => x.year)), Math.max(...c.map((x) => x.year))] as [number, number]) : ([0, 0] as [number, number])));
   }
   const out: [number, number][] = [];
   const size = Math.max(1, Math.min(5, Math.round(s.blockSize)));
@@ -142,14 +141,14 @@ export function blocksOf(s: BlockSettings): [number, number][] {
 
 /** Set codes of a block, or null when the run goes by years. */
 export function blockSetCodes(run: BlockSettings & { block: number }, block = run.block): string[] | null {
-  if (!run.packSets?.length) return null;
+  if (!bySets(run)) return null;
   const chunks = setChunks(run);
   return (chunks[Math.min(block, chunks.length - 1)] ?? []).map((x) => x.code);
 }
 
 /** What a block is called: its years, or its sets for runs by set. */
 export function blockLabel(s: BlockSettings, block: number): string {
-  if (s.packSets?.length) {
+  if (bySets(s)) {
     const c = setChunks(s)[block] ?? [];
     return c.length > 2 ? `${c[0].name} +${c.length - 1}` : c.map((x) => x.name).join(" + ");
   }
@@ -159,13 +158,13 @@ export function blockLabel(s: BlockSettings, block: number): string {
 
 /** Short block tags for the timeline (set codes for runs by set). */
 export function blockTags(s: BlockSettings): string[] {
-  if (s.packSets?.length) return setChunks(s).map((c) => c.map((x) => x.code.toUpperCase()).join("+"));
+  if (bySets(s)) return setChunks(s).map((c) => c.map((x) => x.code.toUpperCase()).join("+") || "—");
   return blocksOf(s).map(yearsLabel);
 }
 
 /** The whole run in a few words. */
 export function runLabel(s: BlockSettings): string {
-  if (s.packSets?.length) return `${s.packSets.length} chosen set${s.packSets.length === 1 ? "" : "s"}`;
+  if (bySets(s)) return "Chosen boosters";
   return yearsLabel([s.startYear, s.endYear]);
 }
 

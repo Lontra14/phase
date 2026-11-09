@@ -19,10 +19,10 @@ The match itself is the stock phase.rs board, rules engine and AI.
 ## Progression
 
 A run through Magic's history. Settings: the boosters **by years** (start year, end year, years per block 1–5) or
-**chosen by set** (search the sets, pick them in play order, 1–5 sets per block, "By date" / "Shuffle" / "+ 4
-random"), packs per sealed, games per block (**best of 1, 3 or 5**), and the table: **2 to 4 players**, vs AI or vs
+**chosen by set** (how many blocks = series, and for each block its own sets — one or more, from every booster set
+of the index, searchable and paged), packs per sealed, games per block (**best of 1, 3 or 5**), and the table: **2 to 4 players**, vs AI or vs
 friends online (each seat a friend or an AI; at 4, **free for all** or **teams 2 vs 2** = Two-Headed Giant, seats
-1+2 against 3+4).
+1+2 against 3+4 — four friends: phase.rs's AI cannot play in a team, and upstream drops AI seats from team games).
 
 Each block:
 
@@ -208,3 +208,17 @@ modes (room for online games, rules switch, the same list reading); its deep lin
   engine supplies the planar deck). No card-pool legality; the three variants keep the engine's 60-card minimum.
   👑 Teams 2 vs 2 Commander (Two-Headed Giant Commander, no deck check: engine patch). The Commander versions of
   Archenemy and Planechase are not offered: the engine applies Commander's banned list to them.
+
+## In-game names, schemes and planes
+
+- The players keep the names of the mode (run, table) in the game: `launch.ts` stores them (`pt1-table-names`) and
+  `ProgressionResultWatcher.tsx` puts them over phase.rs's random planeswalker names; online, each device also sends
+  its own name.
+- Scheme (Archenemy) and plane / phenomenon (Planechase) images: `scripts/gen-scryfall-images.sh` keeps those layouts
+  (upstream left them out, so the cards showed as text tiles). The Archenemy panel sits on the left edge between the
+  two halves of the board (the Planechase one on the right), folds away, and shows the big preview on hover /
+  long-press. The archenemy sets the top scheme in motion at the start of each of *their* first main phases (CR 904.10).
+- Planechase and Planechase Commander (Test match, 2–4 players): friends online only — phase.rs's AI cannot roll the
+  planar die and upstream drops AI seats from Planechase games.
+- Engine patch (`crates/engine/src/game/deck_validation.rs`): no deck size, copy limit or banned list for Archenemy,
+  Planechase, their Commander versions and Two-Headed Giant Commander (the scheme / planar decks keep their rules).

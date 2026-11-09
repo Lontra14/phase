@@ -156,11 +156,34 @@ export interface MatchSpec {
   youDeck?: string;
   aiDeck?: string;
   /** Rules of the game: Limited (default; any cards, any copies), a commander format (command zone, commander rules) or a multiplayer variant. */
-  format?: "Limited" | "Commander" | "DuelCommander" | "Freeform" | "TwoHeadedGiant" | "TwoHeadedGiantCommander" | "Archenemy" | "Planechase";
+  format?: "Limited" | "Commander" | "DuelCommander" | "Freeform" | "TwoHeadedGiant" | "TwoHeadedGiantCommander" | "Archenemy" | "Planechase" | "PlanechaseCommander";
   /** Test match tables: seats in all (2 when absent). */
   players?: number;
   /** Test match tables: the AI players (vs AI: every opponent; online: the seats no friend takes). */
   aiSeats?: TableSeat[];
+  /** The name of every seat of the game (index = engine seat), shown in the game instead of phase.rs's random names. */
+  tableNames?: string[];
+}
+
+/** Where the names of the next game's players wait for the game to start (see ProgressionResultWatcher). */
+export const TABLE_NAMES_KEY = "pt1-table-names";
+
+function rememberTableNames(names: string[] | undefined, gameId: string | null): void {
+  try {
+    if (names?.length) localStorage.setItem(TABLE_NAMES_KEY, JSON.stringify({ names, gameId, at: Date.now() }));
+    else localStorage.removeItem(TABLE_NAMES_KEY);
+  } catch {
+    // names are cosmetic
+  }
+}
+
+/** My name in online games (phase.rs sends the store's display name to the other players). */
+function setMyName(name: string): void {
+  const n = name.trim();
+  if (!n) return;
+  const mp = useMultiplayerStore.getState() as { setDisplayName?: (v: string) => void };
+  if (mp.setDisplayName) mp.setDisplayName(n);
+  else useMultiplayerStore.setState({ displayName: n });
 }
 
 export interface TableSeat {
@@ -182,7 +205,7 @@ export interface TableSeat {
 function engineFormat(f: MatchSpec["format"]): GameFormat {
   if (f === "Commander" || f === "DuelCommander") return "FreeformCommander";
   // Multiplayer variants (no card-pool legality; the engine fixes their deck minimum).
-  if (f === "TwoHeadedGiant" || f === "TwoHeadedGiantCommander" || f === "Archenemy" || f === "Planechase") return f;
+  if (f === "TwoHeadedGiant" || f === "TwoHeadedGiantCommander" || f === "Archenemy" || f === "Planechase" || f === "PlanechaseCommander") return f;
   return f === "Limited" || f === "Freeform" ? "Freeform" : "Limited";
 }
 
@@ -225,8 +248,9 @@ async function prepareArt(spec: MatchSpec, data: ProgData): Promise<void> {
 /** The minimum deck size the engine requires in this game's format (Archenemy / Planechase: 60). */
 export function engineDeckMinimum(format: MatchSpec["format"], players = 2): number {
   const fmt = tableFormat({ format, players });
-  // Free-for-All and Two-Headed Giant (also its Commander version, patched in the engine): no deck check at all.
-  if (fmt === "FreeForAll" || fmt === "TwoHeadedGiant" || fmt === "TwoHeadedGiantCommander") return 0;
+  // No deck size anywhere: Free-for-All and Two-Headed Giant check no deck; the other
+  // variants are patched in the engine (crates/engine/src/game/deck_validation.rs).
+  if (fmt !== "Limited") return 0;
   const rule = FORMAT_DEFAULTS[fmt]?.deck_size;
   return rule ? rule.data : 0;
 }
@@ -250,6 +274,8 @@ export async function launchAiMatchSpec(spec: MatchSpec, data: ProgData, gameId:
   });
   const aiSeats = ais.map((a, i) => ({ difficulty: a.difficulty as SelectableAiDifficulty, deckId: savedDeckCatalogId(aiName(i)) }));
   const config = matchConfig({ ...spec, players: ais.length + 1 });
+  // The AIs sit at seats 1.. in this order.
+  rememberTableNames(spec.tableNames ?? [spec.me.name, ...ais.map((a) => a.player.name)], gameId);
   if (!canAttemptNativeEngine(prefs.nativeEngineEnabled) || spec.first) {
     saveActiveGame({ id: gameId, mode: "ai", difficulty, aiSeats, formatConfig: config });
   }
@@ -269,6 +295,8 @@ export async function hostFriendMatchSpec(spec: MatchSpec, data: ProgData): Prom
   await saveDecks([[youDeck, deck]]);
   localStorage.setItem(ACTIVE_DECK_KEY, youDeck);
   setP2PFirstPlayerHint(spec.hostFirst ?? null);
+  setMyName(spec.me.name);
+  rememberTableNames(spec.tableNames, "*");
   const mp = useMultiplayerStore.getState();
   const settings: HostingSettings = {
     displayName: spec.me.name || mp.displayName || "Host",
@@ -298,6 +326,8 @@ export async function joinFriendMatchSpec(spec: MatchSpec, data: ProgData, code:
   await prepareArt(spec, data);
   await saveDecks([[youDeck, engineDeck(spec, spec.me, data)]]);
   localStorage.setItem(ACTIVE_DECK_KEY, youDeck);
+  setMyName(spec.me.name);
+  rememberTableNames(spec.tableNames, "*");
   useGameStore.setState({ gameId });
   navigate(`/game/${gameId}?mode=p2p-join&code=${code}`);
 }
@@ -315,6 +345,7 @@ async function progressionSpec(run: RunState, data: ProgData): Promise<MatchSpec
     startingLife: run.startingLife,
     matchType: "Bo1",
     players: run.players.length,
+    tableNames: run.players.map((p) => p.name),
     // Teams of two (seats 1+2 against 3+4): Two-Headed Giant.
     ...(run.teams && run.players.length === 4 ? { format: "TwoHeadedGiant" as const } : {}),
     // The AI seats are played on the host's device (or in the game vs AI), each at its own seat.

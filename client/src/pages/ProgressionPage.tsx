@@ -80,7 +80,7 @@ function loadSettings(): ProgSetup {
     players: 2,
     seatKinds: ["friend", "friend", "friend"],
     packMode: "years",
-    packSets: [],
+    packBlocks: [[], [], []],
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -89,7 +89,7 @@ function loadSettings(): ProgSetup {
     // ignore
   }
   if (!Array.isArray(base.seatKinds) || base.seatKinds.length < 3) base.seatKinds = ["friend", "friend", "friend"];
-  if (!Array.isArray(base.packSets)) base.packSets = [];
+  if (!Array.isArray(base.packBlocks) || !base.packBlocks.length || !base.packBlocks.every(Array.isArray)) base.packBlocks = [[], [], []];
   return base;
 }
 
@@ -435,9 +435,13 @@ function Centered({ children }: { children: ReactNode }) {
 
 // ── setup ───────────────────────────────────────────────────────────────────
 
-/** Search the booster sets of the index and pick them in play order. */
+const SET_PAGE = 48;
+
+/** Search every booster set of the index (by pages) and add or remove the sets of one block. */
 function SetPicker({ data, value, onChange }: { data: ProgData; value: PackSetRef[]; onChange: (v: PackSetRef[]) => void }) {
   const [query, setQuery] = useState("");
+  const [newest, setNewest] = useState(false);
+  const [page, setPage] = useState(0);
   const all = useMemo(
     () =>
       data.sets
@@ -448,43 +452,51 @@ function SetPicker({ data, value, onChange }: { data: ProgData; value: PackSetRe
   );
   const chosen = new Set(value.map((v) => v.code));
   const q = query.trim().toLowerCase();
-  const shown = all.filter((s) => !chosen.has(s.code) && (!q || `${s.name} ${s.code} ${s.year}`.toLowerCase().includes(q))).slice(0, 80);
+  const matches = all.filter((s) => !q || `${s.name} ${s.code} ${s.year}`.toLowerCase().includes(q));
+  const ordered = newest ? matches.slice().reverse() : matches;
+  const pages = Math.max(1, Math.ceil(ordered.length / SET_PAGE));
+  const pg = Math.min(page, pages - 1);
+  const shown = ordered.slice(pg * SET_PAGE, pg * SET_PAGE + SET_PAGE);
   const ref = (s: (typeof all)[number]): PackSetRef => ({ code: s.code, name: s.name, year: s.year });
+  const toggle = (s: (typeof all)[number]) => onChange(chosen.has(s.code) ? value.filter((v) => v.code !== s.code) : [...value, ref(s)]);
   return (
     <div className="pf-setpick">
       <div className="pf-setpick-chosen">
         {value.length ? (
-          value.map((v, i) => (
+          value.map((v) => (
             <span key={v.code} className="pf-setchip">
-              <small>{i + 1}</small> {v.name} <i>{v.year}</i>
+              {v.name} <i>{v.year}</i>
               <button type="button" aria-label={`Remove ${v.name}`} onClick={() => onChange(value.filter((x) => x.code !== v.code))}>
                 ×
               </button>
             </span>
           ))
         ) : (
-          <span className="pf-hint">No set chosen yet: search below and click the boosters you want, in the order you want to open them.</span>
+          <span className="pf-hint">No set in this block yet: click the boosters below (one or more — the pool mixes them).</span>
         )}
       </div>
       <div className="pf-row" style={{ justifyContent: "flex-start", gap: "0.4rem", margin: "0.4rem 0" }}>
-        <input placeholder="Search a set (name, code, year)…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ flex: "1 1 180px" }} />
-        <button type="button" className="pf-btn-mini" disabled={value.length < 2} onClick={() => onChange(value.slice().sort((a, b) => a.year - b.year || a.name.localeCompare(b.name)))}>
-          By date
-        </button>
-        <button type="button" className="pf-btn-mini" disabled={value.length < 2} onClick={() => onChange(value.map((v) => [Math.random(), v] as const).sort((a, b) => a[0] - b[0]).map(([, v]) => v))}>
-          Shuffle
+        <input
+          placeholder={`Search ${all.length} sets (name, code, year)…`}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPage(0);
+          }}
+          style={{ flex: "1 1 180px" }}
+        />
+        <button type="button" className="pf-btn-mini" onClick={() => setNewest((v) => !v)} title="Order of the list">
+          {newest ? "Newest first" : "Oldest first"}
         </button>
         <button
           type="button"
           className="pf-btn-mini"
           onClick={() => {
             const pool = all.filter((s) => !chosen.has(s.code));
-            const add: PackSetRef[] = [];
-            while (add.length < 4 && pool.length) add.push(ref(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]));
-            onChange([...value, ...add]);
+            if (pool.length) onChange([...value, ref(pool[Math.floor(Math.random() * pool.length)])]);
           }}
         >
-          + 4 random
+          + random
         </button>
         {value.length > 0 && (
           <button type="button" className="pf-btn-mini" onClick={() => onChange([])}>
@@ -494,15 +506,78 @@ function SetPicker({ data, value, onChange }: { data: ProgData; value: PackSetRe
       </div>
       <div className="pf-setpick-list">
         {shown.map((s) => (
-          <button key={s.code} type="button" onClick={() => onChange([...value, ref(s)])}>
+          <button key={s.code} type="button" className={chosen.has(s.code) ? "sel" : ""} onClick={() => toggle(s)}>
             <b>{s.name}</b>
             <small>
               {s.code.toUpperCase()} · {s.year}
+              {chosen.has(s.code) ? " · ✓ in this block" : ""}
             </small>
           </button>
         ))}
         {!shown.length && <p className="pf-hint">No set matches.</p>}
       </div>
+      {pages > 1 && (
+        <div className="pf-pager" style={{ marginTop: "0.4rem" }}>
+          <button type="button" className="pf-vchip" disabled={pg === 0} onClick={() => setPage(pg - 1)}>
+            ‹ Prev
+          </button>
+          <span className="pf-hint">
+            page {pg + 1} / {pages} · {ordered.length} sets
+          </span>
+          <button type="button" className="pf-vchip" disabled={pg >= pages - 1} onClick={() => setPage(pg + 1)}>
+            Next ›
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Runs by set: how many blocks (= series of games), and the boosters of each block. */
+function BlockPools({ data, blocks, onChange }: { data: ProgData; blocks: PackSetRef[][]; onChange: (b: PackSetRef[][]) => void }) {
+  const [active, setActive] = useState(0);
+  const at = Math.min(active, blocks.length - 1);
+  const resize = (n: number) => {
+    const next = blocks.slice(0, n);
+    while (next.length < n) next.push([]);
+    onChange(next);
+  };
+  const setBlock = (i: number, v: PackSetRef[]) => onChange(blocks.map((b, k) => (k === i ? v : b)));
+  return (
+    <div style={{ marginTop: "0.8rem" }}>
+      <div className="pf-fields">
+        <label className="pf-field">
+          <span>Blocks (one series each)</span>
+          <select value={blocks.length} onChange={(e) => resize(Number(e.target.value))}>
+            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="pf-blocktabs">
+        {blocks.map((b, i) => (
+          <button key={i} type="button" className={`pf-vchip${i === at ? " sel" : ""}${b.length ? "" : " empty"}`} onClick={() => setActive(i)}>
+            Block {i + 1}
+            <small>{b.length ? b.map((x) => x.code.toUpperCase()).join("+") : "—"}</small>
+          </button>
+        ))}
+      </div>
+      <div className="pf-row" style={{ justifyContent: "flex-start", gap: "0.4rem", margin: "0.3rem 0 0" }}>
+        {at > 0 && (
+          <button type="button" className="pf-btn-mini" onClick={() => setBlock(at, blocks[at - 1].slice())}>
+            Same as block {at}
+          </button>
+        )}
+        {blocks[at].length > 0 && blocks.length > 1 && (
+          <button type="button" className="pf-btn-mini" onClick={() => onChange(blocks.map((b, k) => (k === at || b.length ? b : blocks[at].slice())))}>
+            Fill the empty blocks with these
+          </button>
+        )}
+      </div>
+      <SetPicker data={data} value={blocks[at]} onChange={(v) => setBlock(at, v)} />
     </div>
   );
 }
@@ -533,13 +608,17 @@ function SetupScreen({
   const last = Math.min(data?.lastYear ?? THIS_YEAR, THIS_YEAR);
   const years = useMemo(() => Array.from({ length: last - first + 1 }, (_, i) => first + i), [first, last]);
   const set = (patch: Partial<ProgSetup>) => setS((cur) => ({ ...cur, ...patch }));
-  const effective: RunSettings = { ...s, packSets: s.packMode === "sets" ? s.packSets : undefined, teams: s.players === 4 && !!s.teams };
+  // Teams need four people: phase.rs's AI cannot play as part of a team.
+  const teamsOn = s.players === 4 && !!s.teams && s.mode === "friend";
+  const packBlocks = s.packBlocks ?? [[]];
+  const effective: RunSettings = { ...s, packBlocks: s.packMode === "sets" ? packBlocks : undefined, teams: teamsOn };
+  const emptyBlocks = s.packMode === "sets" ? packBlocks.filter((b) => !b.length).length : 0;
   const blocks = blocksOf(effective);
   const tags = blockTags(effective);
   const bestOf = s.bestOf ?? 3;
 
   // The table: me, then seats 2..players (vs AI all AIs; online a friend or an AI each).
-  const seatKinds: SeatKind[] = s.seatKinds.slice(0, s.players - 1).map((k) => (s.mode === "ai" ? "ai" : k));
+  const seatKinds: SeatKind[] = s.seatKinds.slice(0, s.players - 1).map((k) => (s.mode === "ai" ? "ai" : teamsOn ? "friend" : k));
   const friendSeats = seatKinds.filter((k) => k === "friend").length;
   const aiName = (n: number) => {
     const base = s.names[1].trim() || "Forge AI";
@@ -551,7 +630,7 @@ function SetupScreen({
     return friend?.name?.trim() || `Friend ${i + 1}`;
   };
   const roomReady = !inRoom || (linked && friendsIn.length >= friendSeats);
-  const canStart = blocks.length > 0 && (s.mode === "ai" || roomReady);
+  const canStart = blocks.length > 0 && !emptyBlocks && (s.mode === "ai" || roomReady);
 
   const start = () => {
     try {
@@ -560,7 +639,7 @@ function SetupScreen({
       // ignore
     }
     const { names: _n, players: _p, seatKinds: _k, packMode: _m, ...settings } = s;
-    const runSettings: RunSettings = { ...settings, packSets: effective.packSets, teams: effective.teams, bestOf };
+    const runSettings: RunSettings = { ...settings, packBlocks: effective.packBlocks, teams: teamsOn, bestOf };
     const names = [s.names[0].trim() || "Player 1", ...seatKinds.map((_, i) => seatName(i))];
     const kinds: ("human" | "ai")[] = ["human", ...seatKinds.map((k) => (k === "ai" ? ("ai" as const) : ("human" as const)))];
     // Friends in the order they joined the room take the friend seats in order.
@@ -683,27 +762,28 @@ function SetupScreen({
               )}
               <label className="pf-field">
                 <span>Starting life</span>
-                <input type="number" min={1} max={999} placeholder={effective.teams ? "30 per team" : "20"} value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
+                <input type="number" min={1} max={999} placeholder={teamsOn ? "30 per team" : "20"} value={s.startingLife ?? ""} onChange={(e) => set({ startingLife: e.target.value ? Math.max(1, Number(e.target.value)) : null })} />
               </label>
             </div>
             {s.players === 4 && (
               <div className="pf-field" style={{ marginTop: "0.9rem" }}>
                 <span>Table of 4</span>
                 <div className="pf-seg">
-                  <button type="button" className={!s.teams ? "sel" : ""} onClick={() => set({ teams: false })}>
+                  <button type="button" className={!teamsOn ? "sel" : ""} onClick={() => set({ teams: false })}>
                     Free for all
                   </button>
-                  <button type="button" className={s.teams ? "sel" : ""} onClick={() => set({ teams: true })}>
+                  <button type="button" className={teamsOn ? "sel" : ""} disabled={s.mode === "ai"} onClick={() => set({ teams: true })}>
                     Teams 2 vs 2
                   </button>
                 </div>
+                <small className="pf-hint">{s.mode === "ai" ? "Teams need four players online: the AI can't play in a team." : teamsOn ? "Teams: four friends (the AI can't play in a team)." : ""}</small>
               </div>
             )}
             <div className="pf-seats" style={{ marginTop: "0.9rem" }}>
               <div className="pf-seat">
                 <div className="pf-seat-head">
                   <b>Seat 1 · you</b>
-                  {effective.teams && <span className="pf-hint">team A</span>}
+                  {teamsOn && <span className="pf-hint">team A</span>}
                 </div>
               </div>
               {seatKinds.map((k, i) => (
@@ -712,8 +792,8 @@ function SetupScreen({
                     <b>
                       Seat {i + 2} · {seatName(i)}
                     </b>
-                    {effective.teams && <span className="pf-hint">{i === 0 ? "team A · your teammate" : "team B"}</span>}
-                    {s.mode === "friend" && (
+                    {teamsOn && <span className="pf-hint">{i === 0 ? "team A · your teammate" : "team B"}</span>}
+                    {s.mode === "friend" && !teamsOn && (
                       <div className="pf-seg">
                         <button type="button" className={k === "friend" ? "sel" : ""} onClick={() => set({ seatKinds: s.seatKinds.map((x, j) => (j === i ? "friend" : x)) })}>
                           Friend
@@ -782,16 +862,18 @@ function SetupScreen({
                   </label>
                 </>
               )}
-              <label className="pf-field">
-                <span>{s.packMode === "years" ? "Years per block" : "Sets per block"}</span>
-                <select value={s.blockSize} onChange={(e) => set({ blockSize: Number(e.target.value) })}>
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {s.packMode === "years" && (
+                <label className="pf-field">
+                  <span>Years per block</span>
+                  <select value={s.blockSize} onChange={(e) => set({ blockSize: Number(e.target.value) })}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="pf-field">
                 <span>Packs per sealed</span>
                 <select value={s.packs} onChange={(e) => set({ packs: Number(e.target.value) })}>
@@ -804,7 +886,7 @@ function SetupScreen({
               </label>
             </div>
             {s.packMode === "sets" &&
-              (data ? <SetPicker data={data} value={s.packSets ?? []} onChange={(v) => set({ packSets: v })} /> : <p className="pf-hint-pulse">Loading the sets…</p>)}
+              (data ? <BlockPools data={data} blocks={packBlocks} onChange={(v) => set({ packBlocks: v })} /> : <p className="pf-hint-pulse">Loading the sets…</p>)}
             <label className="pf-check">
               <input type="checkbox" checked={s.cumulative} onChange={(e) => set({ cumulative: e.target.checked })} />
               <span>
@@ -820,7 +902,8 @@ function SetupScreen({
               </span>
             </label>
             <div className="pf-summary">
-              <b>{blocks.length}</b> block{blocks.length === 1 ? "" : "s"} → <b>{blocks.length}</b> best-of-{bestOf} series
+              <b>{blocks.length}</b> block{blocks.length === 1 ? "" : "s"} → <b>{blocks.length}</b> series of best of {bestOf} (
+              {blocks.length * Math.ceil(bestOf / 2)}–{blocks.length * bestOf} games)
               {blocks.length > 0 && (
                 <>
                   {" "}· {tags.slice(0, 6).join(", ")}
@@ -830,7 +913,9 @@ function SetupScreen({
               <br />
               {s.packMode === "years"
                 ? `Early years use their original boosters (8- and 12-card packs, no mythics before 2008). Smaller packs are topped up so every sealed holds about ${s.packs * 14} cards.`
-                : `Each block opens about ${s.packs * 14} cards from its set${s.blockSize > 1 ? "s" : ""}, with that set's own booster layout.`}
+                : emptyBlocks
+                  ? `${emptyBlocks} block${emptyBlocks === 1 ? " has" : "s have"} no boosters yet: pick at least one set for every block.`
+                  : `Each block opens about ${s.packs * 14} cards from its own sets, each with its booster layout.`}
             </div>
           </div>
         </div>
@@ -1354,7 +1439,7 @@ function FinalScreen({ run, onNew, onCopy }: { run: RunState; onNew: () => void;
           <thead>
             <tr>
               <th>Block</th>
-              <th>{run.packSets?.length ? "Boosters" : "Years"}</th>
+              <th>{run.packBlocks?.length ? "Boosters" : "Years"}</th>
               <th>Winner</th>
               <th>Score</th>
             </tr>
@@ -1363,7 +1448,7 @@ function FinalScreen({ run, onNew, onCopy }: { run: RunState; onNew: () => void;
             {run.history.map((h) => (
               <tr key={h.block}>
                 <td>{h.block + 1}</td>
-                <td>{run.packSets?.length ? blockLabel(run, h.block) : yearsLabel(h.years)}</td>
+                <td>{run.packBlocks?.length ? blockLabel(run, h.block) : yearsLabel(h.years)}</td>
                 <td>{h.winner === null ? "—" : sideName(run, h.winner)}</td>
                 <td>{h.score}</td>
               </tr>

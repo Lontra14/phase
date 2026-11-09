@@ -1041,24 +1041,8 @@ fn evaluate_planechase(
     if !pairing.admits_count(request.commander.len()) {
         reasons.push("Planechase decks do not use a commander slot".to_string());
     }
-    // CR 100.5: `DeckSizeRule::accepts` is the sole authority — Planechase's
-    // registry value is `Minimum(60)`, so this is behavior-neutral versus the
-    // hardcoded `< 60` it replaces.
-    let total_cards = deck_size_subject_count(format_rules.format.deck_size_subject(), db, request);
-    if !format_rules.deck_size.accepts(total_cards) {
-        let format_label = format_rules.format.label();
-        reasons.push(format!(
-            "{format_label} deck must have {} cards (found {total_cards})",
-            format_rules.deck_size.requirement_phrase()
-        ));
-    }
-
-    let limit = format_rules.default_deck_copy_limit;
-    let counts = combined_copy_counts(db, request, CommandZoneNetting::CountVerbatim);
-    let over_limit = copy_limit_violations(db, &counts, limit);
-    if !over_limit.is_empty() {
-        reasons.push(summarize_cards(&copy_limit_label(limit), &over_limit, 6));
-    }
+    // Pay the 1 pt1: no deck size and no copy limit for Planechase decks (friendly games,
+    // any cards). The supplementary deck below keeps its own rules.
 
     if request.planar_deck.is_empty() {
         return CompatibilityCheck {
@@ -1099,24 +1083,8 @@ fn evaluate_archenemy(
     if !pairing.admits_count(request.commander.len()) {
         reasons.push("Archenemy decks do not use a commander slot".to_string());
     }
-    // CR 100.5: `DeckSizeRule::accepts` is the sole authority — Archenemy's
-    // registry value is `Minimum(60)`, so this is behavior-neutral versus the
-    // hardcoded `< 60` it replaces.
-    let total_cards = deck_size_subject_count(format_rules.format.deck_size_subject(), db, request);
-    if !format_rules.deck_size.accepts(total_cards) {
-        let format_label = format_rules.format.label();
-        reasons.push(format!(
-            "{format_label} deck must have {} cards (found {total_cards})",
-            format_rules.deck_size.requirement_phrase()
-        ));
-    }
-
-    let limit = format_rules.default_deck_copy_limit;
-    let counts = combined_copy_counts(db, request, CommandZoneNetting::CountVerbatim);
-    let over_limit = copy_limit_violations(db, &counts, limit);
-    if !over_limit.is_empty() {
-        reasons.push(summarize_cards(&copy_limit_label(limit), &over_limit, 6));
-    }
+    // Pay the 1 pt1: no deck size and no copy limit for Archenemy decks (friendly games,
+    // any cards). The supplementary deck below keeps its own rules.
 
     if !request.scheme_deck.is_empty() {
         validate_scheme_deck(
@@ -1227,13 +1195,13 @@ fn evaluate_planechase_commander(
     unknown_cards: &BTreeSet<String>,
     format_rules: &FormatConfig,
 ) -> CompatibilityCheck {
-    let mut check = evaluate_commander_with_format(
-        db,
-        request,
-        unknown_cards,
-        CommanderVariantRules::planechase_commander(),
-        format_rules,
-    );
+    // Pay the 1 pt1: the player's commander deck is not checked (no singleton,
+    // deck size or banned list); only the supplementary deck keeps its rules.
+    let _ = (unknown_cards, format_rules);
+    let mut check = CompatibilityCheck {
+        compatible: true,
+        reasons: Vec::new(),
+    };
     if !request.planar_deck.is_empty() {
         let reasons_before = check.reasons.len();
         validate_planar_deck(
@@ -1253,13 +1221,13 @@ fn evaluate_archenemy_commander(
     unknown_cards: &BTreeSet<String>,
     format_rules: &FormatConfig,
 ) -> CompatibilityCheck {
-    let mut check = evaluate_commander_with_format(
-        db,
-        request,
-        unknown_cards,
-        CommanderVariantRules::archenemy_commander(),
-        format_rules,
-    );
+    // Pay the 1 pt1: the player's commander deck is not checked (no singleton,
+    // deck size or banned list); only the supplementary deck keeps its rules.
+    let _ = (unknown_cards, format_rules);
+    let mut check = CompatibilityCheck {
+        compatible: true,
+        reasons: Vec::new(),
+    };
     if !request.scheme_deck.is_empty() {
         let reasons_before = check.reasons.len();
         validate_scheme_deck(
@@ -1417,6 +1385,7 @@ impl CommanderVariantRules {
 
     /// CR 904.13a: Archenemy Commander decks are Commander decks — same
     /// eligibility predicate and Commander legality table, own error label.
+    #[allow(dead_code)]
     fn archenemy_commander() -> Self {
         Self {
             eligible: is_commander_eligible,
@@ -1430,6 +1399,7 @@ impl CommanderVariantRules {
 
     /// Planechase Commander decks are Commander decks — same eligibility
     /// predicate and Commander legality table, own error label.
+    #[allow(dead_code)]
     fn planechase_commander() -> Self {
         Self {
             eligible: is_commander_eligible,

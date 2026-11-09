@@ -6,6 +6,7 @@ import { useEffect } from "react";
 
 import { useGameStore } from "../stores/gameStore";
 import { useMultiplayerStore } from "../stores/multiplayerStore";
+import { TABLE_NAMES_KEY } from "./launch";
 import { CHESS_RUN_KEY, STARTER_AUTOSAVE_KEY } from "./run";
 
 const RUN_KEYS = ["phase-progression-run", STARTER_AUTOSAVE_KEY, CHESS_RUN_KEY];
@@ -57,6 +58,39 @@ export function ProgressionResultWatcher(): null {
     };
     check();
     return useGameStore.subscribe(check);
+  }, []);
+
+  // The players' names of the mode (run, table) instead of phase.rs's random ones.
+  useEffect(() => {
+    const apply = () => {
+      const { gameState, gameId } = useGameStore.getState();
+      if (!gameState) return;
+      let stored: { names?: string[]; gameId?: string | null; at?: number } | null = null;
+      try {
+        stored = JSON.parse(localStorage.getItem(TABLE_NAMES_KEY) ?? "null") as typeof stored;
+      } catch {
+        stored = null;
+      }
+      if (!stored?.names?.length || Date.now() - (stored.at ?? 0) > 12 * 3600 * 1000) return;
+      if (stored.gameId && stored.gameId !== "*" && stored.gameId !== gameId) return;
+      const current = useMultiplayerStore.getState().playerNames as Map<number, string> | undefined;
+      const next = new Map(current ?? []);
+      let changed = false;
+      stored.names.forEach((name, seat) => {
+        if (name && next.get(seat) !== name) {
+          next.set(seat, name);
+          changed = true;
+        }
+      });
+      if (changed) useMultiplayerStore.setState({ playerNames: next });
+    };
+    apply();
+    const a = useGameStore.subscribe(apply);
+    const b = useMultiplayerStore.subscribe(apply);
+    return () => {
+      a();
+      b();
+    };
   }, []);
   return null;
 }

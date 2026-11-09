@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { useCardHover } from "../../hooks/useCardHover.ts";
 
 import { dispatchAction } from "../../game/dispatch.ts";
 import { useGameStore } from "../../stores/gameStore.ts";
@@ -15,11 +18,21 @@ export function PlanechasePanel() {
   const canRoll =
     planechase?.can_roll === true && legalActions.some((action) => action.type === "RollPlanarDie");
 
+  // Hover / long-press on the plane opens the big preview like any card.
+  const { handlers } = useCardHover(activePlane?.id ?? null);
+  const [open, setOpen] = useState(true);
+
   if (!planechase) return null;
 
+  // On the right edge between the two halves of the board: it covers no player's header.
   return (
-    <div className="pointer-events-auto absolute left-1/2 top-2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-md border border-slate-700 bg-slate-950/90 px-3 py-2 shadow-lg backdrop-blur">
-      <div className="h-[112px] w-[80px] shrink-0 [--card-h:112px] [--card-w:80px]">
+    <div className="pointer-events-auto absolute right-2 top-1/2 z-30 flex -translate-y-1/2 items-center gap-3 rounded-md border border-slate-700 bg-slate-950/90 px-3 py-2 shadow-lg backdrop-blur">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="text-xs text-slate-400" title={open ? "Hide" : "Show"}>
+        {open ? "▸" : "◂"}
+      </button>
+      {open && (
+      <>
+      <div {...handlers} className="h-[84px] w-[120px] shrink-0 cursor-zoom-in [--card-h:84px] [--card-w:120px]">
         {activePlane ? (
           <CardImage
             cardName={activePlane.name}
@@ -57,6 +70,8 @@ export function PlanechasePanel() {
           </button>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
