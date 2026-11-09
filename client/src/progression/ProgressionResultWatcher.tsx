@@ -65,9 +65,10 @@ export function ProgressionResultWatcher(): null {
     const apply = () => {
       const { gameState, gameId } = useGameStore.getState();
       if (!gameState) return;
-      let stored: { names?: string[]; gameId?: string | null; at?: number } | null = null;
+      type StoredNames = { names?: string[]; gameId?: string | null; at?: number };
+      let stored: StoredNames | null;
       try {
-        stored = JSON.parse(localStorage.getItem(TABLE_NAMES_KEY) ?? "null") as typeof stored;
+        stored = JSON.parse(localStorage.getItem(TABLE_NAMES_KEY) ?? "null") as StoredNames | null;
       } catch {
         stored = null;
       }
@@ -76,7 +77,7 @@ export function ProgressionResultWatcher(): null {
       const current = useMultiplayerStore.getState().playerNames as Map<number, string> | undefined;
       const next = new Map(current ?? []);
       let changed = false;
-      stored.names.forEach((name, seat) => {
+      stored.names.forEach((name: string, seat: number) => {
         if (name && next.get(seat) !== name) {
           next.set(seat, name);
           changed = true;
